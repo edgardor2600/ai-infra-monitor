@@ -1,6 +1,7 @@
 import logging
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from backend.api.routes.ingest import router as ingest_router
 
 # Configure logging
 logging.basicConfig(
@@ -15,6 +16,9 @@ app = FastAPI(
     description="Backend API for AI Infrastructure Monitoring",
     version="0.1.0"
 )
+
+# Include routers
+app.include_router(ingest_router, prefix="/api/v1/ingest", tags=["ingest"])
 
 
 async def check_db_connection() -> bool:
