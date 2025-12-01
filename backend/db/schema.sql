@@ -46,6 +46,7 @@ CREATE TABLE alerts (
 CREATE TABLE analyses (
     id SERIAL PRIMARY KEY,
     host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+    alert_id INTEGER REFERENCES alerts(id) ON DELETE CASCADE,
     result JSONB NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
