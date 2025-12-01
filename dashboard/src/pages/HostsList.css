@@ -1,0 +1,70 @@
+.hosts-list {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.hosts-list h1 {
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.hosts-table {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+thead {
+  background: #f8f9fa;
+}
+
+th {
+  padding: 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #495057;
+  border-bottom: 2px solid #dee2e6;
+}
+
+td {
+  padding: 12px;
+  border-bottom: 1px solid #dee2e6;
+}
+
+tr:hover {
+  background: #f8f9fa;
+}
+
+.btn-view {
+  display: inline-block;
+  padding: 6px 12px;
+  background: #007bff;
+  color: white;
+  text-decoration: none;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: background 0.2s;
+}
+
+.btn-view:hover {
+  background: #0056b3;
+}
+
+.loading,
+.error,
+.no-data {
+  padding: 40px;
+  text-align: center;
+  color: #6c757d;
+}
+
+.error {
+  color: #dc3545;
+}

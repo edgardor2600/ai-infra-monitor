@@ -1,0 +1,177 @@
+.alerts-feed {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.alerts-feed h1 {
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.alerts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.alert-card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  border-left: 4px solid #6c757d;
+}
+
+.alert-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.alert-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.severity-badge {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.severity-high {
+  background: #dc3545;
+  color: white;
+}
+
+.severity-medium {
+  background: #ffc107;
+  color: #333;
+}
+
+.severity-low {
+  background: #17a2b8;
+  color: white;
+}
+
+.metric-name {
+  font-weight: 600;
+  color: #333;
+}
+
+.timestamp {
+  color: #6c757d;
+  font-size: 14px;
+}
+
+.btn-analyze {
+  padding: 8px 16px;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.btn-analyze:hover:not(:disabled) {
+  background: #0056b3;
+}
+
+.btn-analyze:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+}
+
+.alert-message {
+  color: #495057;
+  margin-bottom: 16px;
+}
+
+.analysis-pending {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: 4px;
+  color: #6c757d;
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #007bff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.analysis-result {
+  margin-top: 16px;
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: 4px;
+  border-left: 4px solid #28a745;
+}
+
+.analysis-result h3 {
+  margin: 0 0 12px 0;
+  color: #28a745;
+  font-size: 16px;
+}
+
+.analysis-section {
+  margin-bottom: 12px;
+}
+
+.analysis-section strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #333;
+}
+
+.analysis-section p {
+  margin: 0;
+  color: #495057;
+}
+
+.analysis-section ul {
+  margin: 4px 0 0 0;
+  padding-left: 20px;
+}
+
+.analysis-section li {
+  color: #495057;
+  margin-bottom: 4px;
+}
+
+.confidence {
+  margin-top: 12px;
+  font-size: 14px;
+  color: #6c757d;
+  font-weight: 500;
+}
+
+.loading, .error, .no-data {
+  padding: 40px;
+  text-align: center;
+  color: #6c757d;
+}
+
+.error {
+  color: #dc3545;
+}
