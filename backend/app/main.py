@@ -1,7 +1,12 @@
 import logging
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from backend.api.routes.ingest import router as ingest_router
+from backend.api.routes.analyze import router as analyze_router
+from backend.api.routes.hosts import router as hosts_router
+from backend.api.routes.metrics import router as metrics_router
+from backend.api.routes.alerts import router as alerts_router
 
 # Configure logging
 logging.basicConfig(
@@ -17,8 +22,21 @@ app = FastAPI(
     version="0.1.0"
 )
 
-# Include routers
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],  # Vite default port
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Register routers
 app.include_router(ingest_router, prefix="/api/v1/ingest", tags=["ingest"])
+app.include_router(analyze_router, prefix="/api/v1", tags=["analyze"])
+app.include_router(hosts_router, prefix="/api/v1", tags=["hosts"])
+app.include_router(metrics_router, prefix="/api/v1", tags=["metrics"])
+app.include_router(alerts_router, prefix="/api/v1", tags=["alerts"])
 
 
 async def check_db_connection() -> bool:
