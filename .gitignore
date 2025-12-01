@@ -1,0 +1,12 @@
+# Variables de entorno (¡No subir a Git!)
+.env
+
+# Script de prueba temporal
+
+
+# Caché de Python
+__pycache__/
+
+# Entornos virtuales
+venv/
+.venv/

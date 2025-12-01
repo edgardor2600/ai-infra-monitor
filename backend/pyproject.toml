@@ -12,6 +12,8 @@ dependencies = [
     "rq",
     "sqlalchemy",
     "psycopg2-binary",
+    "pytest",
+    "httpx",
 ]
 requires-python = ">=3.10"
 readme = "README.md"
