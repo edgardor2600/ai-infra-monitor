@@ -6,10 +6,9 @@ Provides commands to run the agent and collect metrics.
 """
 
 import sys
-import json
+import asyncio
 import logging
 import click
-from agent.collector import collect_once
 
 # Configure logging
 logging.basicConfig(
@@ -35,33 +34,40 @@ def cli():
 @click.option(
     "--dry-run",
     is_flag=True,
-    help="Run in dry-run mode (mock metrics collection)"
+    help="Run in dry-run mode (print batches without sending)"
 )
 def run(dry_run: bool):
     """
-    Run the agent to collect metrics.
+    Run the agent to collect and send metrics.
     
-    In dry-run mode, the agent collects mock metrics without
-    actually querying the system.
+    In dry-run mode, the agent collects metrics and prints batches
+    without sending them to the backend.
+    
+    Configuration via environment variables:
+    - AGENT_INTERVAL: Collection interval in seconds (default: 5)
+    - AGENT_BATCH_MAX: Maximum samples before flush (default: 20)
+    - AGENT_BATCH_TIMEOUT: Maximum seconds before flush (default: 20)
+    - BACKEND_URL: Backend server URL (default: http://localhost:8001)
+    - AGENT_HOST_ID: Host identifier (default: 1)
     """
     if dry_run:
         logger.info("Running in dry-run mode")
     else:
         logger.info("Running agent")
-        logger.warning("Real metrics collection not yet implemented, using mock data")
     
     try:
-        # Collect metrics
-        metrics = collect_once()
+        # Import here to avoid circular imports
+        from agent.run import run as agent_run
         
-        # Output as JSON to stdout
-        json_output = json.dumps(metrics, indent=2)
-        click.echo(json_output)
+        # Run the async agent loop
+        asyncio.run(agent_run(dry_run=dry_run))
         
-        logger.info("Metrics collection completed successfully")
+    except KeyboardInterrupt:
+        logger.info("Agent stopped by user")
+        sys.exit(0)
         
     except Exception as e:
-        logger.error(f"Error collecting metrics: {e}", exc_info=True)
+        logger.error(f"Error running agent: {e}", exc_info=True)
         sys.exit(1)
 
 

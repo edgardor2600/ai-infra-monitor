@@ -4,9 +4,8 @@ Tests for AI Infra Monitor Agent CLI
 Unit tests for the command-line interface.
 """
 
-import json
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, AsyncMock
 from click.testing import CliRunner
 from agent.__main__ import cli
 
@@ -22,35 +21,9 @@ def runner():
     return CliRunner()
 
 
-@pytest.fixture
-def mock_metrics():
-    """
-    Create mock metrics data fixture.
-    
-    Returns:
-        dict: Mock metrics dictionary
-    """
-    return {
-        "timestamp": "2025-12-01T12:00:00",
-        "hostname": "test-host",
-        "cpu": {
-            "usage_percent": 50.0,
-            "cores": 4
-        },
-        "memory": {
-            "total_mb": 8192,
-            "used_mb": 4096,
-            "usage_percent": 50.0
-        }
-    }
-
-
 def test_cli_help(runner):
     """
     Test that --help flag works correctly.
-    
-    Args:
-        runner: Click test runner fixture
     """
     result = runner.invoke(cli, ["--help"])
     assert result.exit_code == 0
@@ -61,107 +34,53 @@ def test_cli_help(runner):
 def test_run_command_help(runner):
     """
     Test that run command --help works correctly.
-    
-    Args:
-        runner: Click test runner fixture
     """
     result = runner.invoke(cli, ["run", "--help"])
     assert result.exit_code == 0
     assert "--dry-run" in result.output
 
 
-@patch("agent.__main__.collect_once")
-def test_run_dry_run_mode(mock_collect, runner, mock_metrics):
+@patch("agent.run.run", new_callable=AsyncMock)
+def test_run_dry_run_mode(mock_run, runner):
     """
     Test run command with --dry-run flag.
     
-    Args:
-        mock_collect: Mocked collect_once function
-        runner: Click test runner fixture
-        mock_metrics: Mock metrics data
+    Should call agent.run.run with dry_run=True.
     """
-    # Setup mock
-    mock_collect.return_value = mock_metrics
-    
     # Run command
     result = runner.invoke(cli, ["run", "--dry-run"])
     
     # Assertions
     assert result.exit_code == 0
-    mock_collect.assert_called_once()
-    
-    # Verify JSON output
-    output_data = json.loads(result.output)
-    assert output_data == mock_metrics
+    mock_run.assert_called_once_with(dry_run=True)
 
 
-@patch("agent.__main__.collect_once")
-def test_run_without_dry_run(mock_collect, runner, mock_metrics):
+@patch("agent.run.run", new_callable=AsyncMock)
+def test_run_without_dry_run(mock_run, runner):
     """
     Test run command without --dry-run flag.
     
-    Args:
-        mock_collect: Mocked collect_once function
-        runner: Click test runner fixture
-        mock_metrics: Mock metrics data
+    Should call agent.run.run with dry_run=False.
     """
-    # Setup mock
-    mock_collect.return_value = mock_metrics
-    
     # Run command
     result = runner.invoke(cli, ["run"])
     
     # Assertions
     assert result.exit_code == 0
-    mock_collect.assert_called_once()
-    
-    # Verify JSON output
-    output_data = json.loads(result.output)
-    assert output_data == mock_metrics
+    mock_run.assert_called_once_with(dry_run=False)
 
 
-@patch("agent.__main__.collect_once")
-def test_json_output_structure(mock_collect, runner, mock_metrics):
+@patch("agent.run.run", new_callable=AsyncMock)
+def test_error_handling(mock_run, runner):
     """
-    Test that JSON output has correct structure.
-    
-    Args:
-        mock_collect: Mocked collect_once function
-        runner: Click test runner fixture
-        mock_metrics: Mock metrics data
-    """
-    # Setup mock
-    mock_collect.return_value = mock_metrics
-    
-    # Run command
-    result = runner.invoke(cli, ["run", "--dry-run"])
-    
-    # Parse JSON
-    output_data = json.loads(result.output)
-    
-    # Verify structure
-    assert "timestamp" in output_data
-    assert "hostname" in output_data
-    assert "cpu" in output_data
-    assert "memory" in output_data
-    assert isinstance(output_data["cpu"], dict)
-    assert isinstance(output_data["memory"], dict)
-
-
-@patch("agent.__main__.collect_once")
-def test_error_handling(mock_collect, runner):
-    """
-    Test error handling when collection fails.
-    
-    Args:
-        mock_collect: Mocked collect_once function
-        runner: Click test runner fixture
+    Test error handling when agent fails.
     """
     # Setup mock to raise exception
-    mock_collect.side_effect = Exception("Collection failed")
+    mock_run.side_effect = Exception("Agent crashed")
     
     # Run command
-    result = runner.invoke(cli, ["run", "--dry-run"])
+    result = runner.invoke(cli, ["run"])
     
-    # Should exit with error code
+    # Should exit with error code 1 (handled in __main__)
     assert result.exit_code == 1
+    # assert "Error running agent" in result.output  # Logging capture can be flaky with CliRunner

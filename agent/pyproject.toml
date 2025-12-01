@@ -9,6 +9,9 @@ dependencies = [
     "requests",
     "click",
     "pytest",
+    "psutil",
+    "httpx",
+    "pytest-asyncio",
 ]
 requires-python = ">=3.10"
 readme = "README.md"

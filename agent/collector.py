@@ -1,58 +1,42 @@
 """
 AI Infra Monitor Agent - Collector Module
 
-This module provides functions to collect system metrics.
-For Historia 0.3, this is a mock implementation that returns simulated metrics.
+This module provides functions to collect system metrics using psutil.
 """
 
 import logging
+import psutil
 from typing import Dict, Any
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 
 def collect_once() -> Dict[str, Any]:
     """
-    Collect system metrics once.
+    Usa psutil para obtener métricas básicas.
     
-    This is a mock implementation that returns simulated metrics.
-    In a real implementation, this would collect actual system metrics
-    using libraries like psutil.
-    
-    Returns:
-        Dict[str, Any]: Dictionary containing mock system metrics
-    """
-    logger.info("Collecting metrics (mock mode)")
-    
-    # Mock metrics data
-    metrics = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "hostname": "mock-host",
-        "cpu": {
-            "usage_percent": 45.2,
-            "cores": 8,
-            "frequency_mhz": 2400
-        },
-        "memory": {
-            "total_mb": 16384,
-            "used_mb": 8192,
-            "available_mb": 8192,
-            "usage_percent": 50.0
-        },
-        "disk": {
-            "total_gb": 512,
-            "used_gb": 256,
-            "free_gb": 256,
-            "usage_percent": 50.0
-        },
-        "network": {
-            "bytes_sent": 1048576,
-            "bytes_recv": 2097152,
-            "packets_sent": 1024,
-            "packets_recv": 2048
-        }
+    Devuelve un diccionario con:
+    {
+        "metric": "<nombre>",
+        "value": <float|int>
     }
     
-    logger.info(f"Collected {len(metrics)} metric categories")
-    return metrics
+    Returns:
+        Dict[str, Any]: Dictionary containing metric name and value
+    """
+    logger.info("Collecting metrics using psutil")
+    
+    # Collect CPU percentage (non-blocking, interval=1 for accuracy)
+    cpu_percent = psutil.cpu_percent(interval=1)
+    
+    # Collect memory percentage
+    mem_percent = psutil.virtual_memory().percent
+    
+    # Return as list of samples
+    samples = [
+        {"metric": "cpu_percent", "value": cpu_percent},
+        {"metric": "mem_percent", "value": mem_percent}
+    ]
+    
+    logger.info(f"Collected {len(samples)} metrics")
+    return samples
