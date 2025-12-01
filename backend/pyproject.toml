@@ -1,0 +1,28 @@
+[project]
+name = "ai-infra-monitor-backend"
+version = "0.1.0"
+description = "Backend for AI Infra Monitor"
+authors = [
+    {name = "Edgardo Rodriguez"},
+]
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "redis",
+    "rq",
+    "sqlalchemy",
+    "psycopg2-binary",
+]
+requires-python = ">=3.10"
+readme = "README.md"
+license = {text = "MIT"}
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[tool.black]
+line-length = 88
+
+[tool.isort]
+profile = "black"
