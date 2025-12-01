@@ -6,7 +6,7 @@ This module processes host metrics and creates alerts based on defined rules.
 
 import logging
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from backend.worker.rules import rule_cpu_over_90, rule_cpu_delta
 
@@ -48,10 +48,20 @@ async def create_alert(
     conn.commit()
     cursor.close()
     
-    logger.info(
-        f"Created alert {alert_id}: host={host_id}, "
-        f"metric={metric_name}, severity={severity}"
-    )
+    # Create alert dict for notification
+    alert_data = {
+        "id": alert_id,
+        "host_id": host_id,
+        "metric_name": metric_name,
+        "severity": severity,
+        "message": message,
+        "status": "open",
+        "created_at": datetime.now(timezone.utc)
+    }
+    
+    # Send notification
+    from backend.worker.notifications import log_alert
+    log_alert(alert_data)
     
     return alert_id
 
