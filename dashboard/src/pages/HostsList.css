@@ -1,19 +1,21 @@
 .hosts-list {
-  padding: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: 100%;
 }
 
 .hosts-list h1 {
-  margin-bottom: 20px;
-  color: #333;
+  margin-bottom: 1.5rem;
+  color: var(--text-primary);
+  font-size: 2rem;
+  font-weight: 700;
 }
 
 .hosts-table {
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background: var(--surface-color);
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
   overflow: hidden;
+  border: 1px solid var(--border-color);
 }
 
 table {
@@ -22,49 +24,89 @@ table {
 }
 
 thead {
-  background: #f8f9fa;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
 th {
-  padding: 12px;
+  padding: 1rem;
   text-align: left;
   font-weight: 600;
-  color: #495057;
-  border-bottom: 2px solid #dee2e6;
+  color: white;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+tbody tr {
+  transition: all 0.2s ease;
+  border-bottom: 1px solid var(--border-color);
+}
+
+tbody tr:last-child {
+  border-bottom: none;
+}
+
+tbody tr:hover {
+  background: #f8f9ff;
+  transform: scale(1.01);
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
 }
 
 td {
-  padding: 12px;
-  border-bottom: 1px solid #dee2e6;
+  padding: 1rem;
+  color: var(--text-primary);
+  font-size: 0.95rem;
 }
 
-tr:hover {
-  background: #f8f9fa;
+td:first-child {
+  font-weight: 600;
+  color: #667eea;
 }
 
 .btn-view {
   display: inline-block;
-  padding: 6px 12px;
-  background: #007bff;
+  padding: 0.5rem 1.25rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   text-decoration: none;
-  border-radius: 4px;
-  font-size: 14px;
-  transition: background 0.2s;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
 }
 
 .btn-view:hover {
-  background: #0056b3;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  color: white;
+}
+
+.btn-view:active {
+  transform: translateY(0);
 }
 
 .loading,
 .error,
 .no-data {
-  padding: 40px;
+  padding: 3rem;
   text-align: center;
-  color: #6c757d;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
 }
 
 .error {
-  color: #dc3545;
+  color: var(--danger-color);
+  font-weight: 500;
+}
+
+.loading::after {
+  content: '...';
+  animation: dots 1.5s steps(4, end) infinite;
+}
+
+@keyframes dots {
+  0%, 20% { content: '.'; }
+  40% { content: '..'; }
+  60%, 100% { content: '...'; }
 }
