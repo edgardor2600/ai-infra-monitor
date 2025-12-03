@@ -55,10 +55,11 @@ async def ingest_metrics(batch: IngestBatch):
     Ingest a batch of metrics from a host.
     
     This endpoint receives metric samples, validates them, and stores
-    the complete payload in the metrics_raw table.
+    the complete payload in the metrics_raw table. If process metrics
+    are included, they are also stored in the process_metrics table.
     
     Args:
-        batch: IngestBatch containing host_id, timestamp, interval, and samples
+        batch: IngestBatch containing host_id, timestamp, interval, samples, and optional processes
     
     Returns:
         dict: Response with ok status and number of samples received
@@ -88,15 +89,41 @@ async def ingest_metrics(batch: IngestBatch):
         )
         
         row_id = cursor.fetchone()[0]
+        
+        # Insert process metrics if present
+        processes_count = 0
+        if batch.processes:
+            for process in batch.processes:
+                cursor.execute(
+                    """
+                    INSERT INTO process_metrics 
+                    (host_id, process_name, pid, cpu_percent, memory_mb, status, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                    """,
+                    (
+                        batch.host_id,
+                        process.name,
+                        process.pid,
+                        process.cpu_percent,
+                        process.memory_mb,
+                        process.status
+                    )
+                )
+            processes_count = len(batch.processes)
+        
         conn.commit()
         cursor.close()
         
         samples_count = len(batch.samples)
-        logger.info(f"Stored batch (id={row_id}) with {samples_count} samples")
+        logger.info(
+            f"Stored batch (id={row_id}) with {samples_count} samples "
+            f"and {processes_count} process metrics"
+        )
         
         return {
             "ok": True,
-            "received": samples_count
+            "received": samples_count,
+            "processes": processes_count
         }
         
     except psycopg2.Error as e:

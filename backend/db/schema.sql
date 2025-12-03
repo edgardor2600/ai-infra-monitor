@@ -4,6 +4,7 @@
 -- Drop tables in correct order (respecting foreign key constraints)
 DROP TABLE IF EXISTS analyses CASCADE;
 DROP TABLE IF EXISTS alerts CASCADE;
+DROP TABLE IF EXISTS process_metrics CASCADE;
 DROP TABLE IF EXISTS metrics_raw CASCADE;
 DROP TABLE IF EXISTS metrics CASCADE;
 DROP TABLE IF EXISTS hosts CASCADE;
@@ -28,6 +29,18 @@ CREATE TABLE metrics_raw (
     id SERIAL PRIMARY KEY,
     host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
     payload JSONB NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Create process_metrics table for process-level monitoring
+CREATE TABLE process_metrics (
+    id SERIAL PRIMARY KEY,
+    host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+    process_name TEXT NOT NULL,
+    pid INTEGER NOT NULL,
+    cpu_percent NUMERIC(5,2),
+    memory_mb NUMERIC(10,2),
+    status TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -60,3 +73,6 @@ CREATE INDEX idx_alerts_host_id ON alerts(host_id);
 CREATE INDEX idx_alerts_severity ON alerts(severity);
 CREATE INDEX idx_alerts_status ON alerts(status);
 CREATE INDEX idx_analyses_host_id ON analyses(host_id);
+CREATE INDEX idx_process_metrics_host_id ON process_metrics(host_id);
+CREATE INDEX idx_process_metrics_created_at ON process_metrics(created_at);
+CREATE INDEX idx_process_metrics_name ON process_metrics(process_name);
