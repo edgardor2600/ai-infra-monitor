@@ -316,11 +316,3 @@ Contributions are welcome. Please follow these guidelines:
 2. Create a feature branch
 3. Make your changes with appropriate tests
 4. Submit a pull request with a clear description
-
-## License
-
-MIT License - see LICENSE file for details
-
-## Support
-
-For issues and questions, please use the GitHub issue tracker.
