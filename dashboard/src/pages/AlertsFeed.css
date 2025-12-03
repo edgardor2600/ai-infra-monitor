@@ -70,6 +70,12 @@
   font-size: 14px;
 }
 
+.alert-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .btn-analyze {
   padding: 8px 16px;
   background: #007bff;
@@ -89,6 +95,38 @@
 .btn-analyze:disabled {
   background: #6c757d;
   cursor: not-allowed;
+}
+
+.btn-acknowledge {
+  padding: 8px 16px;
+  background: #ffc107;
+  color: #333;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.btn-acknowledge:hover {
+  background: #e0a800;
+}
+
+.btn-resolve {
+  padding: 8px 16px;
+  background: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.btn-resolve:hover {
+  background: #218838;
 }
 
 .alert-message {

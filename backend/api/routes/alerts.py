@@ -122,3 +122,61 @@ async def get_alert_analysis(alert_id: int) -> Dict[str, Any]:
     finally:
         cursor.close()
         conn.close()
+
+@router.patch("/alerts/{alert_id}/status")
+async def update_alert_status(alert_id: int, status: str) -> Dict[str, Any]:
+    """
+    Update the status of an alert.
+    
+    Args:
+        alert_id: ID of the alert
+        status: New status ('open', 'acknowledged', 'resolved')
+        
+    Returns:
+        Updated alert details
+        
+    Raises:
+        HTTPException: 400 if invalid status, 404 if alert not found
+    """
+    # Validate status
+    valid_statuses = ['open', 'acknowledged', 'resolved']
+    if status not in valid_statuses:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
+        )
+    
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    
+    try:
+        # Check if alert exists
+        cursor.execute("SELECT id FROM alerts WHERE id = %s", (alert_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Alert not found")
+        
+        # Update status
+        cursor.execute(
+            """
+            UPDATE alerts
+            SET status = %s
+            WHERE id = %s
+            RETURNING id, host_id, metric_name, severity, message, status, created_at
+            """,
+            (status, alert_id)
+        )
+        
+        updated_alert = cursor.fetchone()
+        conn.commit()
+        
+        return dict(updated_alert)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to update alert: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
+

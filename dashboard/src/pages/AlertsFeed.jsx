@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { getAlerts, analyzeAlert, getAlertAnalysis } from '../api';
+import { getAlerts, analyzeAlert, getAlertAnalysis, updateAlertStatus } from '../api';
 import './AlertsFeed.css';
 
 function AlertsFeed() {
@@ -87,6 +87,16 @@ function AlertsFeed() {
     return `severity-${severity.toLowerCase()}`;
   };
 
+  const handleStatusUpdate = async (alertId, newStatus) => {
+    try {
+      await updateAlertStatus(alertId, newStatus);
+      // Reload alerts to reflect the change
+      await loadAlerts();
+    } catch (err) {
+      alert('Failed to update alert status: ' + err.message);
+    }
+  };
+
   if (loading) {
     return <div className="loading">Loading alerts...</div>;
   }
@@ -116,15 +126,33 @@ function AlertsFeed() {
                     {new Date(alert.created_at).toLocaleString()}
                   </span>
                 </div>
-                {!analysis && (
-                  <button
-                    onClick={() => handleAnalyze(alert.id)}
-                    disabled={isAnalyzing}
-                    className="btn-analyze"
-                  >
-                    {isAnalyzing ? 'Analyzing...' : 'Analyze'}
-                  </button>
-                )}
+                <div className="alert-actions">
+                  {!analysis && (
+                    <button
+                      onClick={() => handleAnalyze(alert.id)}
+                      disabled={isAnalyzing}
+                      className="btn-analyze"
+                    >
+                      {isAnalyzing ? 'Analyzing...' : 'Analyze'}
+                    </button>
+                  )}
+                  {alert.status === 'open' && (
+                    <button
+                      onClick={() => handleStatusUpdate(alert.id, 'acknowledged')}
+                      className="btn-acknowledge"
+                    >
+                      Acknowledge
+                    </button>
+                  )}
+                  {(alert.status === 'open' || alert.status === 'acknowledged') && (
+                    <button
+                      onClick={() => handleStatusUpdate(alert.id, 'resolved')}
+                      className="btn-resolve"
+                    >
+                      Resolve
+                    </button>
+                  )}
+                </div>
               </div>
               
               <div className="alert-message">{alert.message}</div>
