@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import HostsList from './pages/HostsList';
 import HostDetail from './pages/HostDetail';
 import AlertsFeed from './pages/AlertsFeed';
+import ProcessMonitor from './pages/ProcessMonitor';
 import './App.css';
 
 function App() {
@@ -23,6 +24,7 @@ function App() {
             <Route path="/" element={<HostsList />} />
             <Route path="/hosts" element={<HostsList />} />
             <Route path="/hosts/:id" element={<HostDetail />} />
+            <Route path="/hosts/:id/processes" element={<ProcessMonitor />} />
             <Route path="/alerts" element={<AlertsFeed />} />
           </Routes>
         </main>

@@ -44,4 +44,19 @@ export const getAlertAnalysis = async (alertId) => {
   }
 };
 
+export const getTopProcesses = async (hostId, limit = 10, metric = 'cpu') => {
+  const response = await api.get(`/processes/top?host_id=${hostId}&limit=${limit}&metric=${metric}`);
+  return response.data;
+};
+
+export const getProcessHistory = async (processName, hostId, hours = 1) => {
+  const response = await api.get(`/processes/${encodeURIComponent(processName)}/history?host_id=${hostId}&hours=${hours}`);
+  return response.data;
+};
+
+export const getProcessList = async (hostId) => {
+  const response = await api.get(`/processes/list?host_id=${hostId}`);
+  return response.data;
+};
+
 export default api;
