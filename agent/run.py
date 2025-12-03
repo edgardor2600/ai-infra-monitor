@@ -11,7 +11,7 @@ import time
 from datetime import datetime, timezone
 from typing import List, Dict, Any
 
-from agent.collector import collect_once
+from agent.collector import collect_once, collect_process_metrics
 from agent.sender import send_batch
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ async def run(dry_run: bool = False):
     interval = float(os.getenv("AGENT_INTERVAL", "5"))
     batch_max = int(os.getenv("AGENT_BATCH_MAX", "20"))
     batch_timeout = float(os.getenv("AGENT_BATCH_TIMEOUT", "20"))
-    backend_url = os.getenv("BACKEND_URL", "http://localhost:8001")
+    backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")
     host_id = int(os.getenv("AGENT_HOST_ID", "1"))
     
     logger.info(f"Agent configuration:")
@@ -48,6 +48,8 @@ async def run(dry_run: bool = False):
     
     buffer: List[Dict[str, Any]] = []
     timer_start = time.monotonic()
+    iteration_count = 0  # Track iterations for process collection
+    pending_processes = None  # Store processes until next flush
     
     logger.info("Starting agent loop...")
     
@@ -59,6 +61,12 @@ async def run(dry_run: bool = False):
             # Add samples to buffer (collect_once returns a list)
             buffer.extend(samples)
             logger.debug(f"Buffer size: {len(buffer)}/{batch_max}")
+            
+            # Collect process metrics every 15 seconds (every 3 iterations at 5s interval)
+            iteration_count += 1
+            if iteration_count % 3 == 0:  # 3 * 5s = 15s
+                pending_processes = collect_process_metrics()
+                logger.info(f"Collected {len(pending_processes)} process metrics - will send with next batch")
             
             # Check flush conditions
             elapsed = time.monotonic() - timer_start
@@ -76,6 +84,12 @@ async def run(dry_run: bool = False):
                     "interval": interval,
                     "samples": buffer.copy()
                 }
+                
+                # Add pending processes if available
+                if pending_processes:
+                    batch["processes"] = pending_processes
+                    logger.info(f"Including {len(pending_processes)} process metrics in batch")
+                    pending_processes = None  # Clear after sending
                 
                 if dry_run:
                     # In dry-run mode, just print the batch
