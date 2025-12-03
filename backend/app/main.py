@@ -8,6 +8,7 @@ from backend.api.routes.hosts import router as hosts_router
 from backend.api.routes.metrics import router as metrics_router
 from backend.api.routes.alerts import router as alerts_router
 from backend.api.routes.processes import router as processes_router
+from backend.api.routes.dashboard import router as dashboard_router
 
 # Configure logging
 logging.basicConfig(
@@ -39,6 +40,7 @@ app.include_router(hosts_router, prefix="/api/v1", tags=["hosts"])
 app.include_router(metrics_router, prefix="/api/v1", tags=["metrics"])
 app.include_router(alerts_router, prefix="/api/v1", tags=["alerts"])
 app.include_router(processes_router, prefix="/api/v1", tags=["processes"])
+app.include_router(dashboard_router, prefix="/api/v1", tags=["dashboard"])
 
 
 async def check_db_connection() -> bool:

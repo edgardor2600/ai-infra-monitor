@@ -44,6 +44,11 @@ export const getAlertAnalysis = async (alertId) => {
   }
 };
 
+export const updateAlertStatus = async (alertId, status) => {
+  const response = await api.patch(`/alerts/${alertId}/status?status=${status}`);
+  return response.data;
+};
+
 export const getTopProcesses = async (hostId, limit = 10, metric = 'cpu') => {
   const response = await api.get(`/processes/top?host_id=${hostId}&limit=${limit}&metric=${metric}`);
   return response.data;
@@ -56,6 +61,11 @@ export const getProcessHistory = async (processName, hostId, hours = 1) => {
 
 export const getProcessList = async (hostId) => {
   const response = await api.get(`/processes/list?host_id=${hostId}`);
+  return response.data;
+};
+
+export const getDashboardOverview = async () => {
+  const response = await api.get('/dashboard/overview');
   return response.data;
 };
 
