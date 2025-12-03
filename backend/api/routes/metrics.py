@@ -74,10 +74,8 @@ async def get_metrics(
                 metric_name = sample.get('metric')
                 value = sample.get('value')
                 
-                if metric_name == 'cpu_percent':
-                    metric_point['cpu_percent'] = value
-                elif metric_name == 'mem_percent':
-                    metric_point['mem_percent'] = value
+                if metric_name:
+                    metric_point[metric_name] = value
             
             metrics.append(metric_point)
         

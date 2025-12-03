@@ -76,6 +76,7 @@ function HostDetail() {
         borderColor: 'rgb(75, 192, 192)',
         backgroundColor: 'rgba(75, 192, 192, 0.2)',
         tension: 0.1,
+        yAxisID: 'y',
       },
       {
         label: 'Memory %',
@@ -83,6 +84,15 @@ function HostDetail() {
         borderColor: 'rgb(255, 99, 132)',
         backgroundColor: 'rgba(255, 99, 132, 0.2)',
         tension: 0.1,
+        yAxisID: 'y',
+      },
+      {
+        label: 'Disk %',
+        data: metrics.map(m => m.disk_percent || 0),
+        borderColor: 'rgb(255, 159, 64)',
+        backgroundColor: 'rgba(255, 159, 64, 0.2)',
+        tension: 0.1,
+        yAxisID: 'y',
       },
     ],
   };
@@ -118,6 +128,9 @@ function HostDetail() {
       <div className="header">
         <Link to="/hosts" className="back-link">← Back to Hosts</Link>
         <h1>Host {id} Details</h1>
+        <Link to={`/hosts/${id}/processes`} className="processes-link">
+          <button className="processes-button">View Processes</button>
+        </Link>
       </div>
 
       <div className="stats-cards">
@@ -128,6 +141,13 @@ function HostDetail() {
         <div className="stat-card">
           <h3>Current Memory</h3>
           <div className="stat-value">{latestMetric?.mem_percent?.toFixed(1) || 'N/A'}%</div>
+        </div>
+        <div className="stat-card">
+          <h3>Disk Usage</h3>
+          <div className="stat-value">{latestMetric?.disk_percent?.toFixed(1) || 'N/A'}%</div>
+          <div className="stat-detail">
+            {latestMetric?.disk_free_gb?.toFixed(1) || 'N/A'} GB free of {latestMetric?.disk_total_gb?.toFixed(1) || 'N/A'} GB
+          </div>
         </div>
         <div className="stat-card">
           <h3>Last Update</h3>

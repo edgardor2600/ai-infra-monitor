@@ -44,10 +44,37 @@ def collect_once() -> Dict[str, Any]:
     # Collect memory percentage
     mem_percent = psutil.virtual_memory().percent
     
+    # Collect disk usage (for C: drive on Windows, / on Linux)
+    try:
+        disk = psutil.disk_usage('C:\\' if psutil.WINDOWS else '/')
+        disk_percent = disk.percent
+        disk_free_gb = disk.free / (1024 ** 3)  # Convert to GB
+        disk_total_gb = disk.total / (1024 ** 3)
+    except Exception as e:
+        logger.warning(f"Failed to collect disk metrics: {e}")
+        disk_percent = 0
+        disk_free_gb = 0
+        disk_total_gb = 0
+    
+    # Collect network I/O
+    try:
+        net_io = psutil.net_io_counters()
+        net_bytes_sent = net_io.bytes_sent
+        net_bytes_recv = net_io.bytes_recv
+    except Exception as e:
+        logger.warning(f"Failed to collect network metrics: {e}")
+        net_bytes_sent = 0
+        net_bytes_recv = 0
+    
     # Return as list of samples
     samples = [
         {"metric": "cpu_percent", "value": cpu_percent},
-        {"metric": "mem_percent", "value": mem_percent}
+        {"metric": "mem_percent", "value": mem_percent},
+        {"metric": "disk_percent", "value": disk_percent},
+        {"metric": "disk_free_gb", "value": round(disk_free_gb, 2)},
+        {"metric": "disk_total_gb", "value": round(disk_total_gb, 2)},
+        {"metric": "net_bytes_sent", "value": net_bytes_sent},
+        {"metric": "net_bytes_recv", "value": net_bytes_recv}
     ]
     
     logger.info(f"Collected {len(samples)} metrics")

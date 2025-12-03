@@ -52,6 +52,12 @@
   color: #333;
 }
 
+.stat-detail {
+  font-size: 12px;
+  color: #6c757d;
+  margin-top: 8px;
+}
+
 .chart-container {
   background: white;
   padding: 20px;
