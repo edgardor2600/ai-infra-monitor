@@ -8,6 +8,8 @@ import os
 import asyncio
 import logging
 import time
+import socket
+import httpx
 from datetime import datetime, timezone
 from typing import List, Dict, Any
 
@@ -15,6 +17,51 @@ from agent.collector import collect_once, collect_process_metrics
 from agent.sender import send_batch
 
 logger = logging.getLogger(__name__)
+
+
+async def auto_register_host(backend_url: str) -> int:
+    """
+    Auto-register the current host with the backend if not already registered.
+    
+    Args:
+        backend_url: Base URL of the backend server
+        
+    Returns:
+        int: The host_id to use for this agent
+    """
+    hostname = socket.gethostname()
+    logger.info(f"Auto-registering host: {hostname}")
+    
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            # Check if host exists
+            response = await client.get(f"{backend_url}/api/v1/hosts")
+            response.raise_for_status()
+            data = response.json()
+            
+            # Look for existing host with this hostname
+            hosts = data.get("hosts", [])
+            for host in hosts:
+                if host.get("hostname") == hostname:
+                    host_id = host.get("id")
+                    logger.info(f"Host '{hostname}' already registered with ID: {host_id}")
+                    return host_id
+            
+            # Host not found, need to register it
+            # Since we don't have a registration endpoint, we'll use host_id=1 as fallback
+            # and log a warning
+            logger.warning(
+                f"Host '{hostname}' not found in backend. "
+                f"Please run: python backend/scripts/register_host.py"
+            )
+            logger.warning("Using default host_id=1 for now")
+            return 1
+            
+        except Exception as e:
+            logger.error(f"Error during auto-registration: {e}")
+            logger.warning("Falling back to default host_id=1")
+            return 1
+
 
 
 async def run(dry_run: bool = False):
@@ -36,7 +83,14 @@ async def run(dry_run: bool = False):
     batch_max = int(os.getenv("AGENT_BATCH_MAX", "20"))
     batch_timeout = float(os.getenv("AGENT_BATCH_TIMEOUT", "20"))
     backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")
-    host_id = int(os.getenv("AGENT_HOST_ID", "1"))
+    
+    # Auto-register host if AGENT_HOST_ID not explicitly set
+    if os.getenv("AGENT_HOST_ID"):
+        host_id = int(os.getenv("AGENT_HOST_ID"))
+        logger.info(f"Using explicitly configured host_id: {host_id}")
+    else:
+        logger.info("AGENT_HOST_ID not set, auto-detecting...")
+        host_id = await auto_register_host(backend_url)
     
     logger.info(f"Agent configuration:")
     logger.info(f"  Interval: {interval}s")
