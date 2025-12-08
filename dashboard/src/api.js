@@ -11,7 +11,7 @@ const api = axios.create({
 
 export const getHosts = async () => {
   const response = await api.get('/hosts');
-  return response.data;
+  return response.data.hosts;
 };
 
 export const getHostMetrics = async (hostId, limit = 100) => {

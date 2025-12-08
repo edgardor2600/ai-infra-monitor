@@ -4,6 +4,7 @@ import HostsList from './pages/HostsList';
 import HostDetail from './pages/HostDetail';
 import AlertsFeed from './pages/AlertsFeed';
 import ProcessMonitor from './pages/ProcessMonitor';
+import DiskAnalyzer from './pages/DiskAnalyzer';
 import './App.css';
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
             <div className="nav-links">
               <Link to="/hosts" className="nav-link">Hosts</Link>
               <Link to="/alerts" className="nav-link">Alerts</Link>
+              <Link to="/disk-analyzer" className="nav-link">Disk Analyzer</Link>
             </div>
           </div>
         </nav>
@@ -27,6 +29,7 @@ function App() {
             <Route path="/hosts/:id" element={<HostDetail />} />
             <Route path="/hosts/:id/processes" element={<ProcessMonitor />} />
             <Route path="/alerts" element={<AlertsFeed />} />
+            <Route path="/disk-analyzer" element={<DiskAnalyzer />} />
           </Routes>
         </main>
       </div>
