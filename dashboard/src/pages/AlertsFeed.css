@@ -4,9 +4,69 @@
   margin: 0 auto;
 }
 
+.alerts-feed-header {
+  margin-bottom: 30px;
+}
+
 .alerts-feed h1 {
   margin-bottom: 20px;
   color: #333;
+}
+
+/* Filter Tabs */
+.filter-tabs {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  border-bottom: 2px solid #e9ecef;
+  padding-bottom: 8px;
+}
+
+.filter-tab {
+  padding: 8px 20px;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: #6c757d;
+  transition: all 0.2s;
+}
+
+.filter-tab:hover {
+  color: #495057;
+  background: #f8f9fa;
+  border-radius: 4px 4px 0 0;
+}
+
+.filter-tab.active {
+  color: #007bff;
+  border-bottom-color: #007bff;
+}
+
+/* Status Badge */
+.status-badge {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-open {
+  background: #dc3545;
+  color: white;
+}
+
+.status-acknowledged {
+  background: #ffc107;
+  color: #333;
+}
+
+.status-resolved {
+  background: #28a745;
+  color: white;
 }
 
 .alerts-list {

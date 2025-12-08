@@ -23,12 +23,12 @@ def get_db_connection():
     )
 
 @router.get("/hosts")
-async def get_hosts() -> List[Dict[str, Any]]:
+async def get_hosts() -> Dict[str, Any]:
     """
     Get all registered hosts.
     
     Returns:
-        List of hosts with id, hostname, and created_at
+        Dictionary with 'hosts' key containing list of hosts with id, hostname, and created_at
     """
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -42,7 +42,7 @@ async def get_hosts() -> List[Dict[str, Any]]:
             """
         )
         hosts = cursor.fetchall()
-        return [dict(host) for host in hosts]
+        return {"hosts": [dict(host) for host in hosts]}
         
     finally:
         cursor.close()

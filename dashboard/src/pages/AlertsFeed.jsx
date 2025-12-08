@@ -8,6 +8,7 @@ function AlertsFeed() {
   const [error, setError] = useState(null);
   const [analyzingAlerts, setAnalyzingAlerts] = useState(new Set());
   const [analyses, setAnalyses] = useState({});
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'open', 'acknowledged', 'resolved'
   const intervalRef = useRef(null);
   const analyzingAlertsRef = useRef(new Set());
 
@@ -30,12 +31,23 @@ function AlertsFeed() {
         clearInterval(intervalRef.current);
       }
     };
-  }, []);
+  }, [statusFilter]); // Reload when filter changes
 
   const loadAlerts = async () => {
     try {
-      const data = await getAlerts('open');
-      setAlerts(data);
+      // If filter is 'all', we need to fetch all statuses
+      if (statusFilter === 'all') {
+        // Fetch alerts with all statuses
+        const [openData, ackData, resolvedData] = await Promise.all([
+          getAlerts('open'),
+          getAlerts('acknowledged'),
+          getAlerts('resolved')
+        ]);
+        setAlerts([...openData, ...ackData, ...resolvedData]);
+      } else {
+        const data = await getAlerts(statusFilter);
+        setAlerts(data);
+      }
       setError(null);
       setLoading(false);
     } catch (err) {
@@ -107,7 +119,37 @@ function AlertsFeed() {
 
   return (
     <div className="alerts-feed">
-      <h1>Alerts Feed</h1>
+      <div className="alerts-feed-header">
+        <h1>Alerts Feed</h1>
+        
+        {/* Status Filter Tabs */}
+        <div className="filter-tabs">
+          <button
+            className={`filter-tab ${statusFilter === 'all' ? 'active' : ''}`}
+            onClick={() => setStatusFilter('all')}
+          >
+            All
+          </button>
+          <button
+            className={`filter-tab ${statusFilter === 'open' ? 'active' : ''}`}
+            onClick={() => setStatusFilter('open')}
+          >
+            Open
+          </button>
+          <button
+            className={`filter-tab ${statusFilter === 'acknowledged' ? 'active' : ''}`}
+            onClick={() => setStatusFilter('acknowledged')}
+          >
+            Acknowledged
+          </button>
+          <button
+            className={`filter-tab ${statusFilter === 'resolved' ? 'active' : ''}`}
+            onClick={() => setStatusFilter('resolved')}
+          >
+            Resolved
+          </button>
+        </div>
+      </div>
       
       <div className="alerts-list">
         {alerts.map((alert) => {
@@ -120,6 +162,9 @@ function AlertsFeed() {
                 <div className="alert-info">
                   <span className={`severity-badge ${getSeverityClass(alert.severity)}`}>
                     {alert.severity}
+                  </span>
+                  <span className={`status-badge status-${alert.status}`}>
+                    {alert.status}
                   </span>
                   <span className="metric-name">{alert.metric_name}</span>
                   <span className="timestamp">
