@@ -12,6 +12,7 @@ AI Infrastructure Monitor provides real-time monitoring of system resources, pro
 - **Process-Level Monitoring**: Monitor top resource-consuming processes with detailed metrics
 - **Intelligent Alerting**: Rule-based alert system with configurable thresholds
 - **AI-Powered Analysis**: Automated alert analysis using Google Gemini AI
+- **Disk Analyzer**: Intelligent disk space analysis and safe cleanup with backup capabilities
 - **Modern Dashboard**: Interactive web interface for visualization and management
 - **RESTful API**: Comprehensive API for metric ingestion and data retrieval
 - **Scalable Architecture**: Agent-based design supporting multiple hosts
@@ -209,6 +210,14 @@ ai-infra-monitor/
 
 - `GET /api/v1/hosts` - List all monitored hosts
 - `GET /api/v1/hosts/{host_id}` - Get host details
+
+### Disk Analyzer
+
+- `POST /api/v1/disk-analyzer/scan` - Start a disk scan
+- `GET /api/v1/disk-analyzer/scan/{scan_id}` - Get scan results
+- `GET /api/v1/disk-analyzer/scans` - List all scans
+- `POST /api/v1/disk-analyzer/cleanup` - Perform cleanup operation
+- `GET /api/v1/disk-analyzer/cleanups` - List cleanup operations
 
 ## Configuration
 

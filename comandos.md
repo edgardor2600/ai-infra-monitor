@@ -13,7 +13,6 @@ Para ver el sistema funcionando completamente, necesitas abrir **5 terminales** 
 Recibe los datos y sirve la API REST.
 
 ```powershell
-cd backend
 python -m uvicorn app.main:app --reload --port 8000
 ```
 
@@ -74,8 +73,9 @@ npm run dev
 
 - **`/hosts`** - Lista de todos los hosts monitoreados
 - **`/hosts/{id}`** - Detalles de un host con gráficos en tiempo real
-- **`/hosts/{id}/processes`** - Monitor de procesos del host (NUEVO)
+- **`/hosts/{id}/processes`** - Monitor de procesos del host
 - **`/alerts`** - Feed de alertas con análisis de IA
+- **`/disk-analyzer`** - Análisis y limpieza de disco (NUEVO)
 
 ### Funcionalidades
 
@@ -86,6 +86,10 @@ npm run dev
   - Búsqueda de procesos
   - Gráficos históricos por proceso
   - Auto-refresh cada 5 segundos
+- **Disk Analyzer** - Análisis inteligente de espacio en disco (NUEVO)
+  - Escaneo de categorías (temp, cache, instaladores, etc.)
+  - Limpieza segura con respaldo automático
+  - Historial de escaneos y limpiezas
 
 ---
 
@@ -118,6 +122,20 @@ psql -U postgres -d ai_infra_monitor
 -- Ejecutar migración
 ALTER TABLE analyses ADD COLUMN IF NOT EXISTS alert_id INTEGER REFERENCES alerts(id) ON DELETE CASCADE;
 ```
+
+### Migración de Disk Analyzer (NUEVO)
+
+Agrega tablas para el módulo de análisis y limpieza de disco:
+
+```powershell
+python backend/scripts/migrate_disk_analyzer.py
+```
+
+**Crea las tablas:**
+
+- `disk_scans` - Historial de escaneos de disco
+- `cleanup_operations` - Registro de operaciones de limpieza
+- `cleanup_items` - Items individuales identificados para limpieza
 
 ---
 
@@ -233,11 +251,19 @@ AGENT_HOST_ID=1
 - `POST /api/v1/alerts/{id}/analyze` - Solicitar análisis con IA
 - `GET /api/v1/alerts/{id}/analysis` - Obtener resultado del análisis
 
-### Procesos (NUEVO)
+### Procesos
 
 - `GET /api/v1/processes/top?host_id={id}&metric=cpu&limit=10` - Top procesos
 - `GET /api/v1/processes/{name}/history?host_id={id}&hours=1` - Histórico de proceso
 - `GET /api/v1/processes/list?host_id={id}` - Lista de procesos únicos
+
+### Disk Analyzer (NUEVO)
+
+- `POST /api/v1/disk-analyzer/scan` - Iniciar escaneo de disco
+- `GET /api/v1/disk-analyzer/scan/{scan_id}` - Obtener resultados de escaneo
+- `GET /api/v1/disk-analyzer/scans?host_id={id}&limit=10` - Listar escaneos
+- `POST /api/v1/disk-analyzer/cleanup` - Ejecutar limpieza
+- `GET /api/v1/disk-analyzer/cleanups?scan_id={id}&limit=10` - Listar operaciones de limpieza
 
 ---
 
