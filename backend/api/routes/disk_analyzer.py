@@ -22,10 +22,14 @@ from backend.api.models.disk_analyzer import (
     RollbackRequest,
     RollbackResponse,
     PurgeBackupRequest,
-    AIAnalysisRequest
+    AIAnalysisRequest,
+    DuplicateScanRequest,
+    ExportReportRequest
 )
 from backend.disk_analyzer.scanner import DiskScanner
 from backend.disk_analyzer.cleaner import DiskCleaner
+from backend.disk_analyzer.duplicate_finder import DuplicateFinder
+from backend.disk_analyzer.dev_cleaner import DevMediaCleaner
 from backend.app.llm_adapter import LLMAdapter
 
 # Load environment variables
@@ -303,7 +307,100 @@ async def inspect_backup(request: PurgeBackupRequest):
 
 
 
-@router.get("/scan/{scan_id}", response_model=dict)
+@router.post("/scan-duplicates", response_model=dict)
+async def scan_duplicates(request: DuplicateScanRequest):
+    """Scan directory for duplicate files by SHA-256."""
+    if not os.path.exists(request.target_path):
+        raise HTTPException(status_code=404, detail="Target path not found")
+        
+    try:
+        finder = DuplicateFinder(min_file_size_bytes=request.min_size_mb * 1024 * 1024)
+        results = finder.scan_directory_for_duplicates(request.target_path)
+        return {
+            "ok": True,
+            "target_path": request.target_path,
+            "total_wasted_bytes": results["total_wasted_bytes"],
+            "total_duplicate_files": results["total_duplicate_files"],
+            "duplicate_sets": results["duplicate_sets"]
+        }
+    except Exception as e:
+        logger.error(f"Error scanning duplicates: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/treemap/{scan_id}", response_model=dict)
+async def get_treemap(scan_id: int):
+    """Get hierarchical Treemap data structure for scan visualization."""
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+        
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT categories FROM disk_scans WHERE id = %s", (scan_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Scan not found")
+            
+        categories = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+        
+        children = []
+        for cat_name, cat_data in categories.items():
+            if cat_name not in ['disk_info', 'drive'] and isinstance(cat_data, dict):
+                children.append({
+                    "name": cat_data.get("display_name", cat_name),
+                    "category_key": cat_name,
+                    "value": cat_data.get("total_size", 0),
+                    "file_count": cat_data.get("file_count", 0),
+                    "risk_level": cat_data.get("risk_level", "low")
+                })
+                
+        return {
+            "name": f"Scan #{scan_id}",
+            "children": children
+        }
+    finally:
+        conn.close()
+
+
+@router.post("/export-report", response_model=dict)
+async def export_report(request: ExportReportRequest):
+    """Export diagnostic report in JSON format (and PDF metadata)."""
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+        
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, host_id, total_size_bytes, categories, started_at FROM disk_scans WHERE id = %s", (request.scan_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Scan not found")
+            
+        scan_id, host_id, total_size, categories, started_at = row
+        cats = categories if isinstance(categories, dict) else json.loads(categories)
+        
+        adapter = LLMAdapter()
+        ai_report = await adapter.analyze_disk_scan({"total_files": 0, "total_size_bytes": total_size, "categories": cats})
+        
+        export_payload = {
+            "report_title": f"Informe Corporativo de Diagnóstico de Disco (Scan #{scan_id})",
+            "scan_id": scan_id,
+            "host_id": host_id,
+            "generated_at": datetime.now().isoformat(),
+            "export_format": request.format.upper(),
+            "total_size_bytes": total_size,
+            "ai_diagnosis": ai_report,
+            "categories_breakdown": cats
+        }
+        
+        return {
+            "ok": True,
+            "format": request.format,
+            "report_data": export_payload
+        }
+    finally:
+        conn.close()
 async def get_scan(scan_id: int):
     """
     Get scan results by ID.

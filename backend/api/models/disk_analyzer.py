@@ -61,14 +61,31 @@ class CleanupResponse(BaseModel):
     completed_at: Optional[datetime] = None
 
 
+class RollbackRequest(BaseModel):
+    """Request to rollback a cleanup operation"""
+    operation_id: int = Field(..., description="ID of the cleanup operation to rollback")
+
+
 class PurgeBackupRequest(BaseModel):
-    """Request to delete a backup folder"""
-    backup_path: str = Field(..., description="Absolute path of the backup directory to delete")
+    """Request to purge a backup folder to free disk space."""
+    backup_path: str = Field(..., description="Absolute path of the backup directory to purge")
 
 
 class AIAnalysisRequest(BaseModel):
-    """Request for AI analysis of scan results"""
-    scan_id: int = Field(..., description="ID of the scan to analyze")
+    """Request to analyze scan with MiniMax AI."""
+    scan_id: int = Field(..., description="ID of the completed scan to analyze")
+
+
+class DuplicateScanRequest(BaseModel):
+    """Request to scan for duplicate files by SHA-256."""
+    target_path: str = Field(..., description="Directory path to scan for duplicate files")
+    min_size_mb: int = Field(default=1, description="Minimum file size in MB to check for duplicates")
+
+
+class ExportReportRequest(BaseModel):
+    """Request to export disk diagnostic report as JSON or PDF."""
+    scan_id: int = Field(..., description="ID of the scan to export")
+    format: str = Field(default="json", description="Export format: json or pdf")
 
 
 class ScanListResponse(BaseModel):

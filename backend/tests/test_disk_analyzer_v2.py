@@ -99,7 +99,7 @@ async def test_minimax_llm_adapter():
             "top_recommendations": ["Borrar caché del navegador"]
         }
         
-        with patch.object(adapter, '_call_minimax', new_callable=AsyncMock) as mock_call:
+        with patch.object(adapter.provider, 'analyze_text', new_callable=AsyncMock) as mock_call:
             mock_call.return_value = str(mock_response).replace("'", '"')
             report = await adapter.analyze_disk_scan({"total_files": 10, "total_size_bytes": 1000})
             assert report["title"] == "Diagnóstico de Disco"
