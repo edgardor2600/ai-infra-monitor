@@ -12,6 +12,7 @@ from datetime import datetime
 class ScanRequest(BaseModel):
     """Request to start a disk scan"""
     host_id: int = Field(..., description="ID of the host to scan")
+    drive: Optional[str] = Field("C:", description="Target drive letter to scan (e.g. C:, D:)")
 
 
 class CategoryInfo(BaseModel):
@@ -31,6 +32,7 @@ class ScanResponse(BaseModel):
     scan_id: int
     host_id: int
     status: str
+    drive: Optional[str] = "C:"
     categories: Dict[str, CategoryInfo]
     total_size: int
     total_files: int
@@ -59,6 +61,16 @@ class CleanupResponse(BaseModel):
     completed_at: Optional[datetime] = None
 
 
+class PurgeBackupRequest(BaseModel):
+    """Request to delete a backup folder"""
+    backup_path: str = Field(..., description="Absolute path of the backup directory to delete")
+
+
+class AIAnalysisRequest(BaseModel):
+    """Request for AI analysis of scan results"""
+    scan_id: int = Field(..., description="ID of the scan to analyze")
+
+
 class ScanListResponse(BaseModel):
     """Response listing all scans"""
     scans: List[Dict]
@@ -82,3 +94,4 @@ class RollbackResponse(BaseModel):
     status: str
     files_restored: int
     errors: List[str] = Field(default_factory=list)
+

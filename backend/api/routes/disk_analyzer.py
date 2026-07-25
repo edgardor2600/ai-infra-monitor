@@ -20,10 +20,13 @@ from backend.api.models.disk_analyzer import (
     ScanListResponse,
     CleanupListResponse,
     RollbackRequest,
-    RollbackResponse
+    RollbackResponse,
+    PurgeBackupRequest,
+    AIAnalysisRequest
 )
 from backend.disk_analyzer.scanner import DiskScanner
 from backend.disk_analyzer.cleaner import DiskCleaner
+from backend.app.llm_adapter import LLMAdapter
 
 # Load environment variables
 load_dotenv()
@@ -36,15 +39,6 @@ router = APIRouter(tags=["disk_analyzer"], prefix="/disk-analyzer")
 
 
 def get_db_connection():
-    """
-    Create a database connection using environment variables.
-    
-    Returns:
-        psycopg2.connection: Database connection object
-    
-    Raises:
-        HTTPException: If connection fails
-    """
     try:
         conn = psycopg2.connect(
             dbname=os.getenv("DB_NAME", "ai_infra_monitor"),
@@ -62,19 +56,21 @@ def get_db_connection():
         )
 
 
-def perform_scan_task(scan_id: int, host_id: int):
+@router.get("/drives", response_model=dict)
+async def get_drives():
+    """Get list of available disk drives and free space info."""
+    drives = DiskScanner.get_available_drives()
+    return {"drives": drives}
+
+
+def perform_scan_task(scan_id: int, host_id: int, drive: str = "C:"):
     """
     Background task to perform disk scan.
-    
-    Args:
-        scan_id: ID of the scan record
-        host_id: ID of the host to scan
     """
     conn = None
     try:
-        logger.info(f"Starting background scan task for scan_id={scan_id}, host_id={host_id}")
+        logger.info(f"Starting background scan task for scan_id={scan_id}, host_id={host_id}, drive={drive}")
         
-        # Update scan status to running
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
@@ -83,15 +79,13 @@ def perform_scan_task(scan_id: int, host_id: int):
         )
         conn.commit()
         
-        # Perform scan
-        scanner = DiskScanner(host_id)
+        scanner = DiskScanner(host_id, drive=drive)
         scan_results = scanner.scan_all_categories()
         
-        # Prepare categories data with disk_info
         categories_with_disk_info = scan_results['categories'].copy()
         categories_with_disk_info['disk_info'] = scan_results.get('disk_info', {})
+        categories_with_disk_info['drive'] = drive
         
-        # Store results in database
         cursor.execute(
             """
             UPDATE disk_scans 
@@ -109,7 +103,7 @@ def perform_scan_task(scan_id: int, host_id: int):
         )
         conn.commit()
         
-        # Store individual cleanup items
+        # Insert cleanup items
         for category_name, category_data in scan_results['categories'].items():
             for file_info in category_data.get('files', []):
                 cursor.execute(
@@ -131,7 +125,6 @@ def perform_scan_task(scan_id: int, host_id: int):
         
         conn.commit()
         cursor.close()
-        
         logger.info(f"Scan completed successfully for scan_id={scan_id}")
         
     except Exception as e:
@@ -155,26 +148,15 @@ def perform_scan_task(scan_id: int, host_id: int):
 
 @router.post("/scan", response_model=dict)
 async def start_scan(request: ScanRequest, background_tasks: BackgroundTasks):
-    """
-    Start a disk scan for a host.
-    
-    This endpoint creates a scan record and starts the scan in the background.
-    
-    Args:
-        request: ScanRequest with host_id
-        background_tasks: FastAPI background tasks
-    
-    Returns:
-        dict: Response with scan_id and status
-    """
-    logger.info(f"Starting disk scan for host_id={request.host_id}")
+    """Start a disk scan for a host and drive."""
+    drive = request.drive or "C:"
+    logger.info(f"Starting disk scan for host_id={request.host_id}, drive={drive}")
     
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Create scan record
         cursor.execute(
             """
             INSERT INTO disk_scans (host_id, status, started_at)
@@ -188,16 +170,14 @@ async def start_scan(request: ScanRequest, background_tasks: BackgroundTasks):
         conn.commit()
         cursor.close()
         
-        # Start scan in background
-        background_tasks.add_task(perform_scan_task, scan_id, request.host_id)
-        
-        logger.info(f"Created scan record with id={scan_id}")
+        background_tasks.add_task(perform_scan_task, scan_id, request.host_id, drive)
         
         return {
             "ok": True,
             "scan_id": scan_id,
             "status": "pending",
-            "message": "Scan started in background"
+            "drive": drive,
+            "message": f"Scan started in background on drive {drive}"
         }
         
     except psycopg2.Error as e:
@@ -211,6 +191,116 @@ async def start_scan(request: ScanRequest, background_tasks: BackgroundTasks):
     finally:
         if conn:
             conn.close()
+
+
+@router.post("/analyze-ai", response_model=dict)
+async def analyze_scan_ai(request: AIAnalysisRequest):
+    """Analyze scan results using MiniMax AI for human-friendly insights."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT categories, total_size_bytes FROM disk_scans WHERE id = %s",
+            (request.scan_id,)
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        
+        if not row:
+            raise HTTPException(status_code=404, detail="Scan not found")
+            
+        categories_data = row[0] if row[0] else {}
+        total_size = row[1] or 0
+        
+        total_files = sum(cat.get('file_count', 0) for cat in categories_data.values() if isinstance(cat, dict))
+        
+        scan_summary = {
+            "scan_id": request.scan_id,
+            "total_size_bytes": total_size,
+            "total_size_formatted": DiskCleaner._format_size(total_size),
+            "total_files": total_files,
+            "categories": {
+                k: {
+                    "display_name": v.get("display_name"),
+                    "file_count": v.get("file_count", 0),
+                    "total_size_formatted": DiskCleaner._format_size(v.get("total_size", 0)),
+                    "risk_level": v.get("risk_level")
+                }
+                for k, v in categories_data.items() if isinstance(v, dict)
+            }
+        }
+        
+        adapter = LLMAdapter()
+        ai_report = await adapter.analyze_disk_scan(scan_summary)
+        
+        return {
+            "ok": True,
+            "scan_id": request.scan_id,
+            "ai_report": ai_report
+        }
+    except Exception as e:
+        logger.error(f"Error analyzing scan with AI: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.post("/purge-backup", response_model=dict)
+async def purge_backup(request: PurgeBackupRequest):
+    """Purge a backup folder to immediately free disk space."""
+    res = DiskCleaner.purge_backup_path(request.backup_path)
+    if not res.get('success'):
+        raise HTTPException(status_code=400, detail=res.get('message'))
+    return res
+
+
+@router.post("/inspect-backup", response_model=dict)
+async def inspect_backup(request: PurgeBackupRequest):
+    """Inspect backup directory contents and generate MiniMax AI analysis before purge."""
+    backup_path = request.backup_path
+    if not os.path.exists(backup_path):
+        raise HTTPException(status_code=404, detail="Backup directory not found")
+        
+    total_size = 0
+    file_count = 0
+    categories_found = []
+    
+    try:
+        subitems = os.listdir(backup_path)
+        for item in subitems:
+            item_path = os.path.join(backup_path, item)
+            if os.path.isdir(item_path):
+                categories_found.append(item)
+                
+        for root, dirs, files in os.walk(backup_path):
+            for f in files:
+                file_count += 1
+                fp = os.path.join(root, f)
+                if os.path.isfile(fp):
+                    total_size += os.path.getsize(fp)
+                    
+        backup_info = {
+            "backup_path": backup_path,
+            "total_size_bytes": total_size,
+            "size_formatted": DiskCleaner._format_size(total_size),
+            "file_count": file_count,
+            "categories": categories_found
+        }
+        
+        adapter = LLMAdapter()
+        ai_analysis = await adapter.analyze_backup_purge(backup_info)
+        
+        return {
+            "ok": True,
+            "backup_info": backup_info,
+            "ai_analysis": ai_analysis
+        }
+    except Exception as e:
+        logger.error(f"Error inspecting backup: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @router.get("/scan/{scan_id}", response_model=dict)
