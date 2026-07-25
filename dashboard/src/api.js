@@ -69,4 +69,60 @@ export const getDashboardOverview = async () => {
   return response.data;
 };
 
+// Disk Analyzer API endpoints
+export const getDiskDrives = async () => {
+  const response = await api.get('/disk-analyzer/drives');
+  return response.data.drives;
+};
+
+export const startDiskScan = async (hostId = 1, drive = 'C:') => {
+  const response = await api.post('/disk-analyzer/scan', { host_id: hostId, drive });
+  return response.data;
+};
+
+export const getDiskScan = async (scanId) => {
+  const response = await api.get(`/disk-analyzer/scan/${scanId}`);
+  return response.data;
+};
+
+export const listDiskScans = async (limit = 10) => {
+  const response = await api.get(`/disk-analyzer/scans?limit=${limit}`);
+  return response.data;
+};
+
+export const performDiskCleanup = async (scanId, categories, createBackup = true) => {
+  const response = await api.post('/disk-analyzer/cleanup', {
+    scan_id: scanId,
+    categories,
+    create_backup: createBackup
+  });
+  return response.data;
+};
+
+export const analyzeScanAI = async (scanId) => {
+  const response = await api.post('/disk-analyzer/analyze-ai', { scan_id: scanId });
+  return response.data;
+};
+
+export const purgeBackup = async (backupPath) => {
+  const response = await api.post('/disk-analyzer/purge-backup', { backup_path: backupPath });
+  return response.data;
+};
+
+export const inspectBackup = async (backupPath) => {
+  const response = await api.post('/disk-analyzer/inspect-backup', { backup_path: backupPath });
+  return response.data;
+};
+
+export const listDiskCleanups = async (limit = 10) => {
+  const response = await api.get(`/disk-analyzer/cleanups?limit=${limit}`);
+  return response.data;
+};
+
+export const rollbackDiskCleanup = async (operationId) => {
+  const response = await api.post('/disk-analyzer/rollback', { operation_id: operationId });
+  return response.data;
+};
+
 export default api;
+
