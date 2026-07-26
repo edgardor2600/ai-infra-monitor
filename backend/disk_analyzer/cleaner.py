@@ -8,7 +8,7 @@ import os
 import json
 import shutil
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from datetime import datetime
 
 from .rules import is_path_protected, get_category_by_name
@@ -247,12 +247,22 @@ class DiskCleaner:
         }
     
     @classmethod
-    def purge_backup_path(cls, backup_path: str) -> Dict[str, any]:
+    def purge_backup_path(cls, backup_path: str) -> Dict[str, Any]:
         """
         Delete a specific backup directory to immediately free disk space.
         """
-        if not os.path.exists(backup_path):
-            return {'success': False, 'message': 'Backup directory not found', 'freed_bytes': 0}
+        if not backup_path or not os.path.exists(backup_path):
+            return {
+                'success': True,
+                'message': 'El respaldo ya fue eliminado previamente o no existe.',
+                'freed_bytes': 0,
+                'freed_formatted': '0 B'
+            }
+        
+        def _remove_readonly(func, path, excinfo):
+            import stat
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
         
         try:
             total_size = 0
@@ -262,16 +272,16 @@ class DiskCleaner:
                     if os.path.isfile(fp):
                         total_size += os.path.getsize(fp)
                         
-            shutil.rmtree(backup_path)
+            shutil.rmtree(backup_path, onerror=_remove_readonly)
             return {
                 'success': True,
-                'message': 'Backup purged successfully',
+                'message': 'Respaldo eliminado con éxito.',
                 'freed_bytes': total_size,
                 'freed_formatted': cls._format_size(total_size)
             }
         except Exception as e:
             logger.error(f"Error purging backup {backup_path}: {e}")
-            return {'success': False, 'message': str(e), 'freed_bytes': 0}
+            return {'success': False, 'message': f"No se pudo eliminar la carpeta: {e}", 'freed_bytes': 0}
 
     def cleanup_old_backups(self, days_to_keep: int = 30) -> None:
         """Clean up old backup directories automatically."""
