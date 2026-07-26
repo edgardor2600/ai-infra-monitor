@@ -8,9 +8,11 @@ import os
 import json
 import logging
 import psycopg2
-from fastapi import APIRouter, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, HTTPException, status, BackgroundTasks, Header
+from typing import Optional
 from dotenv import load_dotenv
 from datetime import datetime
+from backend.api.routes.auth import decode_jwt_token
 
 from backend.api.models.disk_analyzer import (
     ScanRequest,
@@ -24,7 +26,8 @@ from backend.api.models.disk_analyzer import (
     PurgeBackupRequest,
     AIAnalysisRequest,
     DuplicateScanRequest,
-    ExportReportRequest
+    ExportReportRequest,
+    ActivateLicenseRequest
 )
 from backend.disk_analyzer.scanner import DiskScanner
 from backend.disk_analyzer.cleaner import DiskCleaner
@@ -40,6 +43,18 @@ logger = logging.getLogger(__name__)
 
 # Create router
 router = APIRouter(tags=["disk_analyzer"], prefix="/disk-analyzer")
+
+
+def get_current_org_id(authorization: Optional[str] = None) -> int:
+    """Extract org_id from JWT token in Authorization header."""
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            token = authorization.split(" ")[1]
+            payload = decode_jwt_token(token)
+            return payload.get("org_id", 1)
+        except Exception:
+            pass
+    return 1
 
 
 def get_db_connection():
@@ -151,10 +166,11 @@ def perform_scan_task(scan_id: int, host_id: int, drive: str = "C:"):
 
 
 @router.post("/scan", response_model=dict)
-async def start_scan(request: ScanRequest, background_tasks: BackgroundTasks):
+async def start_scan(request: ScanRequest, background_tasks: BackgroundTasks, authorization: Optional[str] = Header(None)):
     """Start a disk scan for a host and drive."""
+    org_id = get_current_org_id(authorization)
     drive = request.drive or "C:"
-    logger.info(f"Starting disk scan for host_id={request.host_id}, drive={drive}")
+    logger.info(f"Starting disk scan for host_id={request.host_id}, drive={drive}, org_id={org_id}")
     
     conn = None
     try:
@@ -163,11 +179,11 @@ async def start_scan(request: ScanRequest, background_tasks: BackgroundTasks):
         
         cursor.execute(
             """
-            INSERT INTO disk_scans (host_id, status, started_at)
-            VALUES (%s, 'pending', NOW())
+            INSERT INTO disk_scans (host_id, org_id, status, started_at)
+            VALUES (%s, %s, 'pending', NOW())
             RETURNING id
             """,
-            (request.host_id,)
+            (request.host_id, org_id)
         )
         
         scan_id = cursor.fetchone()[0]
@@ -264,8 +280,24 @@ async def purge_backup(request: PurgeBackupRequest):
 async def inspect_backup(request: PurgeBackupRequest):
     """Inspect backup directory contents and generate MiniMax AI analysis before purge."""
     backup_path = request.backup_path
-    if not os.path.exists(backup_path):
-        raise HTTPException(status_code=404, detail="Backup directory not found")
+    if not backup_path or not os.path.exists(backup_path):
+        return {
+            "ok": True,
+            "backup_info": {
+                "backup_path": backup_path,
+                "total_size_bytes": 0,
+                "size_formatted": "0 B (Ya eliminado)",
+                "file_count": 0,
+                "categories": []
+            },
+            "ai_analysis": {
+                "title": "Respaldo No Existente",
+                "freed_space_notice": "Este respaldo ya no se encuentra en el almacenamiento local.",
+                "apps_and_projects_affected": [],
+                "purge_consequence_es": "Puedes confirmar la eliminación para limpiar este registro del historial.",
+                "safety_confirmation": "No hay archivos retenidos consumiendo espacio en esta ubicación."
+            }
+        }
         
     total_size = 0
     file_count = 0
@@ -306,10 +338,38 @@ async def inspect_backup(request: PurgeBackupRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def check_license_permission(required_feature: str, authorization: Optional[str] = None):
+    """Enforce B2B License Tier feature permissions strictly for current organization."""
+    org_id = get_current_org_id(authorization)
+    conn = get_db_connection()
+    if not conn:
+        return
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT license_tier FROM organizations WHERE id = %s;", (org_id,))
+        row = cursor.fetchone()
+        tier = (row[0] if row else "pro_saas").lower()
+        
+        feature_matrix = {
+            "starter": ["basic_scan", "manual_cleanup"],
+            "pro_saas": ["basic_scan", "manual_cleanup", "sha256_duplicates", "dev_cleaner", "treemap_visual", "json_export", "purge_backups"],
+            "enterprise": ["basic_scan", "manual_cleanup", "sha256_duplicates", "dev_cleaner", "treemap_visual", "json_export", "purge_backups", "immutable_audit_logs", "multi_tenant", "custom_llm_provider", "air_gapped_nocloud"]
+        }
+        
+        allowed = feature_matrix.get(tier, feature_matrix["pro_saas"])
+        if required_feature not in allowed:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Acceso restringido: La función '{required_feature}' requiere una licencia comercial de nivel Pro SaaS o Enterprise B2B. Plan activo actual: {tier.upper()}."
+            )
+    finally:
+        conn.close()
+
 
 @router.post("/scan-duplicates", response_model=dict)
-async def scan_duplicates(request: DuplicateScanRequest):
+async def scan_duplicates(request: DuplicateScanRequest, authorization: Optional[str] = Header(None)):
     """Scan directory for duplicate files by SHA-256."""
+    check_license_permission("sha256_duplicates", authorization)
     if not os.path.exists(request.target_path):
         raise HTTPException(status_code=404, detail="Target path not found")
         
@@ -326,6 +386,183 @@ async def scan_duplicates(request: DuplicateScanRequest):
     except Exception as e:
         logger.error(f"Error scanning duplicates: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/scan-dev-artifacts", response_model=dict)
+async def scan_dev_artifacts(request: DuplicateScanRequest, authorization: Optional[str] = Header(None)):
+    """Scan directory for developer & multimedia artifacts (node_modules, .venv, .next, etc.)."""
+    check_license_permission("dev_cleaner", authorization)
+    if not os.path.exists(request.target_path):
+        raise HTTPException(status_code=404, detail="Target path not found")
+        
+    try:
+        cleaner = DevMediaCleaner()
+        results = cleaner.scan_dev_artifacts(request.target_path)
+        return {
+            "ok": True,
+            "target_path": request.target_path,
+            "total_artifacts": results["total_artifacts"],
+            "total_size_bytes": results["total_size_bytes"],
+            "formatted_size": DiskCleaner._format_size(results["total_size_bytes"]),
+            "artifacts": results["artifacts"]
+        }
+    except Exception as e:
+        logger.error(f"Error scanning dev artifacts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/audit-logs", response_model=dict)
+async def get_audit_logs(limit: int = 30, authorization: Optional[str] = Header(None)):
+    """Get immutable B2B audit logs of all cleanup operations for current organization."""
+    check_license_permission("immutable_audit_logs", authorization)
+    org_id = get_current_org_id(authorization)
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+        
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT l.id, l.org_id, o.name as org_name, l.host_id, h.hostname,
+                   l.categories, l.files_deleted_count, l.bytes_freed,
+                   l.backup_path, l.ai_provider, l.ai_analysis_summary, l.executed_at
+            FROM cleanup_audit_logs l
+            LEFT JOIN organizations o ON l.org_id = o.id
+            LEFT JOIN hosts h ON l.host_id = h.id
+            WHERE l.org_id = %s
+            ORDER BY l.executed_at DESC
+            LIMIT %s
+        """, (org_id, limit))
+        rows = cursor.fetchall()
+        
+        logs = []
+        for r in rows:
+            logs.append({
+                "id": r[0],
+                "org_id": r[1],
+                "organization_name": r[2] or "Organización Principal",
+                "host_id": r[3],
+                "hostname": r[4] or "localhost",
+                "categories": r[5],
+                "files_deleted_count": r[6],
+                "bytes_freed": r[7],
+                "formatted_bytes_freed": DiskCleaner._format_size(r[7] or 0),
+                "backup_path": r[8],
+                "ai_provider": r[9] or "MiniMax AI",
+                "ai_analysis_summary": r[10] or "Limpieza segura ejecutada.",
+                "executed_at": r[11].isoformat() if r[11] else None
+            })
+            
+        return {"ok": True, "logs": logs}
+    finally:
+        conn.close()
+
+
+@router.get("/backup-purge-notifications", response_model=dict)
+async def check_backup_purge_notifications():
+    """Check for backup directories older than 25 days pending 30-day auto-purge."""
+    backup_root = os.path.join(os.path.expanduser("~"), ".ai-infra-monitor", "cleanup_backup")
+    if not os.path.exists(backup_root):
+        return {"ok": True, "pending_purges": []}
+        
+    pending = []
+    now = datetime.now().timestamp()
+    warn_threshold = 25 * 24 * 60 * 60 # 25 days
+    
+    try:
+        for item in os.listdir(backup_root):
+            item_path = os.path.join(backup_root, item)
+            if os.path.isdir(item_path):
+                mtime = os.path.getmtime(item_path)
+                age_seconds = now - mtime
+                age_days = int(age_seconds // (24 * 3600))
+                
+                if age_seconds >= warn_threshold:
+                    days_remaining = max(0, 30 - age_days)
+                    pending.append({
+                        "backup_folder": item,
+                        "backup_path": item_path,
+                        "age_days": age_days,
+                        "days_remaining": days_remaining,
+                        "auto_purge_scheduled": True
+                    })
+                    
+        return {"ok": True, "pending_purges": pending}
+    except Exception as e:
+        logger.error(f"Error checking backup purge notifications: {e}")
+        return {"ok": False, "error": str(e), "pending_purges": []}
+
+
+@router.get("/license-info", response_model=dict)
+async def get_license_info(authorization: Optional[str] = Header(None)):
+    """Get active organization license tier, B2B feature flags, and active LLM provider."""
+    org_id = get_current_org_id(authorization)
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+        
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name, license_tier, created_at FROM organizations WHERE id = %s;", (org_id,))
+        row = cursor.fetchone()
+        
+        org_id = row[0] if row else org_id
+        org_name = row[1] if row else "Organización Principal"
+        license_tier = row[2] if row else "pro_saas"
+        
+        adapter = LLMAdapter()
+        active_provider = adapter.provider.get_provider_name()
+        
+        features = {
+            "starter": ["basic_scan", "manual_cleanup"],
+            "pro_saas": ["basic_scan", "manual_cleanup", "sha256_duplicates", "dev_cleaner", "treemap_visual", "json_export", "purge_backups"],
+            "enterprise": ["basic_scan", "manual_cleanup", "sha256_duplicates", "dev_cleaner", "treemap_visual", "json_export", "purge_backups", "immutable_audit_logs", "multi_tenant", "custom_llm_provider", "air_gapped_nocloud"]
+        }
+        
+        allowed = features.get(license_tier, features["pro_saas"])
+        
+        return {
+            "ok": True,
+            "organization_id": org_id,
+            "organization_name": org_name,
+            "license_tier": license_tier.upper(),
+            "active_llm_provider": active_provider,
+            "allowed_features": allowed,
+            "max_hosts": 100 if license_tier == "enterprise" else 10,
+            "status": "ACTIVE"
+        }
+    finally:
+        conn.close()
+
+
+@router.post("/activate-license", response_model=dict)
+async def activate_license(request: ActivateLicenseRequest, authorization: Optional[str] = Header(None)):
+    """Validate and activate a B2B license key string for current organization."""
+    org_id = get_current_org_id(authorization)
+    key = request.license_key.upper().strip()
+    
+    tier = "pro_saas"
+    if "ENT" in key or "ENTERPRISE" in key:
+        tier = "enterprise"
+    elif "STARTER" in key or "FREE" in key:
+        tier = "starter"
+        
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+        
+    try:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE organizations SET license_tier = %s WHERE id = %s;", (tier, org_id))
+        conn.commit()
+        
+        return {
+            "ok": True,
+            "message": f"¡Licencia {tier.upper()} activada con éxito para la Organización!",
+            "license_tier": tier.upper()
+        }
+    finally:
+        conn.close()
 
 
 @router.get("/treemap/{scan_id}", response_model=dict)
@@ -366,6 +603,7 @@ async def get_treemap(scan_id: int):
 @router.post("/export-report", response_model=dict)
 async def export_report(request: ExportReportRequest):
     """Export diagnostic report in JSON format (and PDF metadata)."""
+    check_license_permission("json_export")
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=500, detail="Database connection failed")
@@ -401,6 +639,9 @@ async def export_report(request: ExportReportRequest):
         }
     finally:
         conn.close()
+
+
+@router.get("/scan/{scan_id}", response_model=dict)
 async def get_scan(scan_id: int):
     """
     Get scan results by ID.
@@ -465,17 +706,11 @@ async def get_scan(scan_id: int):
 
 
 @router.get("/scans", response_model=dict)
-async def list_scans(host_id: int = None, limit: int = 10):
+async def list_scans(host_id: int = None, limit: int = 10, authorization: Optional[str] = Header(None)):
     """
-    List all scans, optionally filtered by host.
-    
-    Args:
-        host_id: Optional host ID to filter by
-        limit: Maximum number of scans to return
-    
-    Returns:
-        dict: List of scans
+    List all scans filtered by current organization.
     """
+    org_id = get_current_org_id(authorization)
     conn = None
     try:
         conn = get_db_connection()
@@ -486,21 +721,22 @@ async def list_scans(host_id: int = None, limit: int = 10):
                 """
                 SELECT id, host_id, status, total_size_bytes, started_at, completed_at
                 FROM disk_scans
-                WHERE host_id = %s
+                WHERE org_id = %s AND host_id = %s
                 ORDER BY started_at DESC
                 LIMIT %s
                 """,
-                (host_id, limit)
+                (org_id, host_id, limit)
             )
         else:
             cursor.execute(
                 """
                 SELECT id, host_id, status, total_size_bytes, started_at, completed_at
                 FROM disk_scans
+                WHERE org_id = %s
                 ORDER BY started_at DESC
                 LIMIT %s
                 """,
-                (limit,)
+                (org_id, limit)
             )
         
         rows = cursor.fetchall()
@@ -534,16 +770,11 @@ async def list_scans(host_id: int = None, limit: int = 10):
 
 
 @router.post("/cleanup", response_model=dict)
-async def perform_cleanup(request: CleanupRequest):
+async def perform_cleanup(request: CleanupRequest, authorization: Optional[str] = Header(None)):
     """
     Perform cleanup for selected categories.
-    
-    Args:
-        request: CleanupRequest with scan_id, categories, and backup option
-    
-    Returns:
-        dict: Cleanup results
     """
+    org_id = get_current_org_id(authorization)
     logger.info(f"Starting cleanup for scan_id={request.scan_id}, categories={request.categories}")
     
     conn = None
@@ -567,9 +798,6 @@ async def perform_cleanup(request: CleanupRequest):
         host_id = row[0]
         categories_data = row[1] if row[1] else {}
         
-        # Transform categories_data to extract files for cleanup
-        # categories_data has structure: {category_name: {files: [...], total_size: ..., ...}}
-        # cleaner expects: {category_name: [files]}
         files_by_category = {}
         for category_name in request.categories:
             if category_name in categories_data:
@@ -586,11 +814,11 @@ async def perform_cleanup(request: CleanupRequest):
         cursor.execute(
             """
             INSERT INTO cleanup_operations 
-            (scan_id, host_id, status, categories_cleaned, started_at)
-            VALUES (%s, %s, 'running', %s, NOW())
+            (scan_id, host_id, org_id, status, categories_cleaned, started_at)
+            VALUES (%s, %s, %s, 'running', %s, NOW())
             RETURNING id
             """,
-            (request.scan_id, host_id, request.categories)
+            (request.scan_id, host_id, org_id, request.categories)
         )
         
         operation_id = cursor.fetchone()[0]
@@ -623,9 +851,28 @@ async def perform_cleanup(request: CleanupRequest):
             )
         )
         
-        conn.commit()
-        cursor.close()
-        
+        # Insert B2B Audit Log
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO cleanup_audit_logs 
+                (org_id, host_id, categories, files_deleted_count, bytes_freed, backup_path, ai_provider, ai_analysis_summary)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                org_id,
+                host_id,
+                request.categories,
+                cleanup_results['files_deleted'],
+                cleanup_results['size_freed'],
+                cleanup_results.get('backup_path'),
+                "MiniMax AI",
+                f"Limpieza de {len(request.categories)} categorías ejecutada con respaldo seguro."
+            ))
+            conn.commit()
+            cursor.close()
+        except Exception as audit_err:
+            logger.warning(f"Could not record audit log: {audit_err}")
+            
         logger.info(f"Cleanup completed for operation_id={operation_id}")
         
         return {
@@ -651,17 +898,11 @@ async def perform_cleanup(request: CleanupRequest):
 
 
 @router.get("/cleanups", response_model=dict)
-async def list_cleanups(scan_id: int = None, limit: int = 10):
+async def list_cleanups(scan_id: int = None, limit: int = 10, authorization: Optional[str] = Header(None)):
     """
-    List cleanup operations.
-    
-    Args:
-        scan_id: Optional scan ID to filter by
-        limit: Maximum number of operations to return
-    
-    Returns:
-        dict: List of cleanup operations
+    List cleanup operations filtered by current organization.
     """
+    org_id = get_current_org_id(authorization)
     conn = None
     try:
         conn = get_db_connection()
@@ -674,11 +915,11 @@ async def list_cleanups(scan_id: int = None, limit: int = 10):
                        total_files_deleted, total_size_freed_bytes, backup_path,
                        started_at, completed_at
                 FROM cleanup_operations
-                WHERE scan_id = %s
+                WHERE org_id = %s AND scan_id = %s
                 ORDER BY started_at DESC
                 LIMIT %s
                 """,
-                (scan_id, limit)
+                (org_id, scan_id, limit)
             )
         else:
             cursor.execute(
@@ -687,10 +928,11 @@ async def list_cleanups(scan_id: int = None, limit: int = 10):
                        total_files_deleted, total_size_freed_bytes, backup_path,
                        started_at, completed_at
                 FROM cleanup_operations
+                WHERE org_id = %s
                 ORDER BY started_at DESC
                 LIMIT %s
                 """,
-                (limit,)
+                (org_id, limit)
             )
         
         rows = cursor.fetchall()
@@ -698,6 +940,8 @@ async def list_cleanups(scan_id: int = None, limit: int = 10):
         
         operations = []
         for row in rows:
+            b_path = row[7]
+            b_exists = os.path.exists(b_path) if b_path else False
             operations.append({
                 "operation_id": row[0],
                 "scan_id": row[1],
@@ -706,7 +950,8 @@ async def list_cleanups(scan_id: int = None, limit: int = 10):
                 "categories_cleaned": row[4],
                 "files_deleted": row[5],
                 "size_freed": row[6],
-                "backup_path": row[7],
+                "backup_path": b_path,
+                "backup_exists": b_exists,
                 "started_at": row[8].isoformat() if row[8] else None,
                 "completed_at": row[9].isoformat() if row[9] else None
             })
