@@ -10,6 +10,7 @@ from backend.api.routes.alerts import router as alerts_router
 from backend.api.routes.processes import router as processes_router
 from backend.api.routes.dashboard import router as dashboard_router
 from backend.api.routes.disk_analyzer import router as disk_analyzer_router
+from backend.api.routes.auth import router as auth_router
 
 # Configure logging
 logging.basicConfig(
@@ -43,6 +44,7 @@ app.include_router(alerts_router, prefix="/api/v1", tags=["alerts"])
 app.include_router(processes_router, prefix="/api/v1", tags=["processes"])
 app.include_router(dashboard_router, prefix="/api/v1", tags=["dashboard"])
 app.include_router(disk_analyzer_router, prefix="/api/v1", tags=["disk_analyzer"])
+app.include_router(auth_router, prefix="/api/v1", tags=["auth"])
 
 
 async def check_db_connection() -> bool:

@@ -1,14 +1,15 @@
 """
 AI Infra Monitor - Dashboard API Routes
 
-This module provides endpoints for dashboard overview statistics.
+This module provides endpoints for dashboard overview statistics with multi-tenant org_id filtering.
 """
 
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from fastapi import APIRouter
-from typing import Dict, Any, List
+from fastapi import APIRouter, Header
+from typing import Dict, Any, List, Optional
+from backend.api.routes.auth import decode_jwt_token
 
 router = APIRouter()
 
@@ -22,41 +23,48 @@ def get_db_connection():
         port=os.getenv("DB_PORT", "5432")
     )
 
+
+def get_current_org_id(authorization: Optional[str] = None) -> int:
+    """Extract org_id from JWT token in Authorization header."""
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            token = authorization.split(" ")[1]
+            payload = decode_jwt_token(token)
+            return payload.get("org_id", 1)
+        except Exception:
+            pass
+    return 1
+
+
 @router.get("/dashboard/overview")
-async def get_dashboard_overview() -> Dict[str, Any]:
+async def get_dashboard_overview(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
     """
-    Get dashboard overview statistics.
-    
-    Returns:
-        Dictionary containing:
-        - total_hosts: Total number of monitored hosts
-        - active_alerts: Count of alerts by severity
-        - recent_alerts: Last 5 alerts
-        - hosts_status: Health status of each host
+    Get dashboard overview statistics filtered by current organization.
     """
+    org_id = get_current_org_id(authorization)
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
     try:
-        # Get total hosts
-        cursor.execute("SELECT COUNT(*) as count FROM hosts")
+        # Get total hosts for organization
+        cursor.execute("SELECT COUNT(*) as count FROM hosts WHERE org_id = %s", (org_id,))
         total_hosts = cursor.fetchone()['count']
         
-        # Get active alerts by severity
+        # Get active alerts by severity for organization
         cursor.execute("""
             SELECT 
                 severity,
                 COUNT(*) as count
             FROM alerts
-            WHERE status = 'open'
+            WHERE org_id = %s AND status = 'open'
             GROUP BY severity
-        """)
+        """, (org_id,))
         alerts_by_severity = {row['severity']: row['count'] for row in cursor.fetchall()}
         
         # Get total active alerts
         total_active_alerts = sum(alerts_by_severity.values())
         
-        # Get recent alerts (last 5)
+        # Get recent alerts (last 5) for organization
         cursor.execute("""
             SELECT 
                 a.id,
@@ -68,13 +76,13 @@ async def get_dashboard_overview() -> Dict[str, Any]:
                 a.created_at
             FROM alerts a
             JOIN hosts h ON a.host_id = h.id
-            WHERE a.status = 'open'
+            WHERE a.org_id = %s AND a.status = 'open'
             ORDER BY a.created_at DESC
             LIMIT 5
-        """)
+        """, (org_id,))
         recent_alerts = [dict(row) for row in cursor.fetchall()]
         
-        # Get hosts with their latest metrics and alert counts
+        # Get hosts with their latest metrics and alert counts for organization
         cursor.execute("""
             WITH latest_metrics AS (
                 SELECT DISTINCT ON (host_id)
@@ -89,7 +97,7 @@ async def get_dashboard_overview() -> Dict[str, Any]:
                     host_id,
                     COUNT(*) as alert_count
                 FROM alerts
-                WHERE status = 'open'
+                WHERE org_id = %s AND status = 'open'
                 GROUP BY host_id
             )
             SELECT 
@@ -102,8 +110,9 @@ async def get_dashboard_overview() -> Dict[str, Any]:
             FROM hosts h
             LEFT JOIN latest_metrics lm ON h.id = lm.host_id
             LEFT JOIN host_alerts ha ON h.id = ha.host_id
+            WHERE h.org_id = %s
             ORDER BY h.hostname
-        """)
+        """, (org_id, org_id))
         
         hosts_data = cursor.fetchall()
         hosts_status = []
@@ -111,7 +120,6 @@ async def get_dashboard_overview() -> Dict[str, Any]:
         for row in hosts_data:
             host = dict(row)
             
-            # Extract metrics from payload
             cpu_percent = 0
             mem_percent = 0
             
@@ -122,7 +130,6 @@ async def get_dashboard_overview() -> Dict[str, Any]:
                     elif sample.get('metric') == 'mem_percent':
                         mem_percent = sample.get('value', 0)
             
-            # Remove payload from result to keep it clean
             del host['payload']
             
             host['cpu_percent'] = cpu_percent
