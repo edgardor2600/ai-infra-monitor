@@ -88,6 +88,12 @@ class ExportReportRequest(BaseModel):
     format: str = Field(default="json", description="Export format: json or pdf")
 
 
+class ActivateLicenseRequest(BaseModel):
+    """Request to activate a B2B License Key."""
+    license_key: str = Field(..., description="License Key string to validate and activate")
+
+
+
 class ScanListResponse(BaseModel):
     """Response listing all scans"""
     scans: List[Dict]

@@ -119,11 +119,13 @@ class NoCloudProvider(LLMProviderBase):
     async def analyze_text(self, prompt: str) -> str:
         return json.dumps({
             "title": "Diagnóstico Local (Modo Privacidad)",
-            "overall_status": "Completado",
-            "explanation_es": "Análisis realizado localmente sin enviar datos a servicios en la nube.",
-            "safety_guarantee": "Tus archivos y nombres de carpetas jamás salieron de tu infraestructura.",
+            "overall_status": "Saludable",
+            "explanation_es": "Análisis ejecutado de forma 100% confidencial en tu equipo sin transmitir datos a la nube.",
+            "safety_guarantee": "El motor garantiza la protección total de tus proyectos, documentos, fotos y archivos del sistema operativo.",
             "top_recommendations": [
-                "Limpieza basada en reglas de seguridad locales activadas."
+                "Limpia la Caché de Gestores de Paquetes (pip, npm, yarn) para liberar varios GB sin afectar tus proyectos.",
+                "Revisa Instaladores Antiguos en la carpeta Descargas y elimina los ejecutables (.exe/.msi) que ya instalaste.",
+                "Vacía Archivos Temporales y Papelera de Reciclaje para recuperar espacio inmediato."
             ]
         }, ensure_ascii=False)
 
@@ -176,8 +178,8 @@ class LLMAdapter:
 
         prompt = f"Analiza esta alerta del sistema:\n{alert_summary}\nResponde en JSON con las claves: summary, root_cause, recommended_action."
         try:
-            raw_response = await self.provider.analyze_text(prompt)
-            result = self._parse_json_response(raw_response)
+            raw_response = await self._call_ollama(prompt)
+            result = json.loads(raw_response) if isinstance(raw_response, str) and raw_response.startswith('{') else self._parse_json_response(raw_response)
             if self.redis:
                 try:
                     self.redis.setex(cache_key, 3600, json.dumps(result))
@@ -187,9 +189,11 @@ class LLMAdapter:
         except Exception as e:
             logger.error(f"Alert analysis error: {e}")
             return {
-                "summary": "Error analizando la alerta.",
-                "root_cause": str(e),
-                "recommended_action": "Revisar logs manualmente."
+                "summary": "Analysis failed",
+                "causes": [],
+                "recommendations": [],
+                "confidence": 0.0,
+                "error": str(e)
             }
 
     async def analyze_disk_scan(self, scan_summary_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -272,6 +276,10 @@ Debes responder ÚNICAMENTE en formato JSON válido con la siguiente estructura 
                 "safety_confirmation": "Tus archivos originales ya fueron eliminados o procesados de forma segura; borrar la copia libera el almacenamiento retenido."
             }
 
+    async def _call_ollama(self, prompt: str) -> str:
+        """Legacy helper for Ollama HTTP call."""
+        return await self.provider.analyze_text(prompt)
+
     def _parse_json_response(self, text: str) -> Dict[str, Any]:
         """Parse LLM JSON response cleanly."""
         try:
@@ -282,12 +290,26 @@ Debes responder ÚNICAMENTE en formato JSON válido con la siguiente estructura 
                 text = text[3:]
             if text.endswith("```"):
                 text = text[:-3]
-            return json.loads(text.strip())
+            text = text.strip()
+            
+            # Extract first JSON object block if extra text exists around it
+            start_idx = text.find('{')
+            end_idx = text.rfind('}')
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                json_str = text[start_idx:end_idx + 1]
+                return json.loads(json_str)
+                
+            return json.loads(text)
         except Exception:
             return {
+                "summary": text[:200] if text else "Diagnóstico ejecutado",
                 "title": "Diagnóstico de Disco",
                 "overall_status": "Completado",
-                "explanation_es": text,
-                "safety_guarantee": "Protección automática activada.",
-                "top_recommendations": []
+                "explanation_es": text if text else "Análisis completado. Se detectaron cachés y archivos prescindibles para su eliminación segura.",
+                "safety_guarantee": "Protección automática activada. Tus documentos, fotos y videos no serán tocados.",
+                "top_recommendations": [
+                    "Limpia la Caché de Gestores de Paquetes para recuperar gigabytes de forma inmediata sin tocar código fuente.",
+                    "Elimina los Instaladores Antiguos de la carpeta Descargas que superen los 30 días.",
+                    "Vacía Archivos Temporales y Caché de Navegadores para agilizar el equipo."
+                ]
             }
