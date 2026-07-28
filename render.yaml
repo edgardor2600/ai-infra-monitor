@@ -25,25 +25,3 @@ services:
         value: "*"
       - key: JWT_SECRET
         generateValue: true
-
-  - type: worker
-    name: ai-infra-monitor-worker
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python backend/worker/run_worker.py
-    plan: free
-    envVars:
-      - key: DB_HOST
-        sync: false
-      - key: DB_PORT
-        value: "5432"
-      - key: DB_NAME
-        value: "postgres"
-      - key: DB_USER
-        value: "postgres"
-      - key: DB_PASSWORD
-        sync: false
-      - key: LLM_PROVIDER
-        value: "minimax"
-      - key: MINIMAX_API_KEY
-        sync: false

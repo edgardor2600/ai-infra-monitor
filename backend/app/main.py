@@ -22,11 +22,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+import asyncio
+from backend.worker.run_worker import worker_loop
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager replacing deprecated startup/shutdown events."""
     logger.info("AI Infra Monitor Backend starting up...")
+    # Start background worker task inside the web service
+    worker_task = asyncio.create_task(worker_loop())
     yield
+    worker_task.cancel()
     logger.info("AI Infra Monitor Backend shutting down...")
 
 
