@@ -76,6 +76,7 @@ class IngestBatch(BaseModel):
         processes: Optional list of process metric samples
     """
     host_id: int = Field(..., gt=0, description="Host ID")
+    hostname: Optional[str] = Field(None, description="Hostname of the sending machine (used to resolve correct host_id)")
     timestamp: datetime = Field(..., description="Collection timestamp")
     interval: int = Field(..., gt=0, description="Collection interval in seconds")
     samples: List[Sample] = Field(..., min_length=1, description="List of metric samples")

@@ -132,6 +132,7 @@ async def run(dry_run: bool = False):
                 # Create batch
                 batch = {
                     "host_id": host_id,
+                    "hostname": socket.gethostname(),
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "interval": interval,
                     "samples": buffer.copy()

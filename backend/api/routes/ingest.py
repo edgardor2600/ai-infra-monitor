@@ -54,14 +54,40 @@ async def ingest_metrics(batch: IngestBatch):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Insert into metrics_raw table
+        # If hostname is provided, resolve the correct host_id from the DB
+        # This handles the case where the agent falls back to host_id=1 but the real host has a different id
+        resolved_host_id = batch.host_id
+        if batch.hostname:
+            cursor.execute(
+                "SELECT id FROM hosts WHERE hostname = %s LIMIT 1",
+                (batch.hostname,)
+            )
+            row = cursor.fetchone()
+            if row:
+                resolved_host_id = row[0]
+                logger.info(f"Resolved hostname '{batch.hostname}' to host_id={resolved_host_id}")
+            else:
+                # Auto-register this hostname
+                cursor.execute(
+                    """
+                    INSERT INTO hosts (hostname, org_id)
+                    VALUES (%s, 1)
+                    ON CONFLICT (hostname) DO UPDATE SET hostname = EXCLUDED.hostname
+                    RETURNING id
+                    """,
+                    (batch.hostname,)
+                )
+                resolved_host_id = cursor.fetchone()[0]
+                logger.info(f"Auto-registered hostname '{batch.hostname}' as host_id={resolved_host_id}")
+        
+        # Insert into metrics_raw table using resolved host_id
         cursor.execute(
             """
             INSERT INTO metrics_raw (host_id, payload, created_at)
             VALUES (%s, %s, NOW())
             RETURNING id
             """,
-            (batch.host_id, json.dumps(payload))
+            (resolved_host_id, json.dumps(payload))
         )
         
         row_id = cursor.fetchone()[0]

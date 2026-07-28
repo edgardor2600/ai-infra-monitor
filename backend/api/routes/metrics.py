@@ -26,13 +26,14 @@ async def get_metrics(
 ) -> List[Dict[str, Any]]:
     """
     Get recent telemetry metrics for a specific host.
-    Reads real metrics submitted by host agents from metrics_raw.
+    Only returns metrics received in the last 24 hours, prioritizing the last 10 minutes.
+    This ensures stale/synthetic data never contaminates live dashboards.
     """
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
     try:
-        # Query latest metric batches for host
+        # Try last 10 minutes first (real-time window)
         cursor.execute(
             """
             SELECT 
@@ -40,67 +41,118 @@ async def get_metrics(
                 payload
             FROM metrics_raw
             WHERE host_id = %s
+              AND created_at >= NOW() - INTERVAL '10 minutes'
             ORDER BY created_at DESC
             LIMIT %s
             """,
             (host_id, limit)
         )
-        
         raw_metrics = cursor.fetchall()
+
+        # Fallback: if no data in last 10 min, try last 24 hours (agent may have been restarted)
+        if not raw_metrics:
+            cursor.execute(
+                """
+                SELECT 
+                    created_at,
+                    payload
+                FROM metrics_raw
+                WHERE host_id = %s
+                  AND created_at >= NOW() - INTERVAL '24 hours'
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (host_id, limit)
+            )
+            raw_metrics = cursor.fetchall()
         
         metrics = []
         for record in raw_metrics:
-            dt = record['created_at']
+            batch_dt = record['created_at']
             # Format ISO UTC timestamp with explicit Z suffix so frontend converts to local browser time
-            if isinstance(dt, datetime):
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                timestamp = dt.isoformat().replace("+00:00", "Z")
-                if not timestamp.endswith("Z"):
-                    timestamp += "Z"
+            if isinstance(batch_dt, datetime):
+                if batch_dt.tzinfo is None:
+                    batch_dt = batch_dt.replace(tzinfo=timezone.utc)
+                batch_ts = batch_dt.isoformat().replace("+00:00", "Z")
+                if not batch_ts.endswith("Z"):
+                    batch_ts += "Z"
             else:
-                timestamp = str(dt)
+                batch_ts = str(batch_dt)
 
             payload = record['payload'] if isinstance(record['payload'], dict) else json.loads(record['payload'])
             samples = payload.get('samples', [])
             hostname = payload.get('hostname', f"Host #{host_id}")
             
-            # Extract metrics from samples (handling both flat and nested sample formats)
-            metric_point = {
-                'timestamp': timestamp,
-                'hostname': hostname,
-                'cpu_percent': None,
-                'mem_percent': None,
-                'disk_percent': None,
-                'disk_free_gb': None,
-                'disk_total_gb': None,
-                'net_bytes_sent': None,
-                'net_bytes_recv': None
-            }
+            # Detect format: nested (each sample has its own timestamp + metrics[]) vs flat (list of {metric,value})
+            is_nested = samples and isinstance(samples[0], dict) and 'metrics' in samples[0]
             
-            for item in samples:
-                if not isinstance(item, dict):
-                    continue
-                
-                # Check if item is a flat metric dict {"metric": "cpu_percent", "value": 11.0}
-                if 'metric' in item and 'value' in item:
-                    m_name = item.get('metric')
-                    m_val = item.get('value')
-                    if m_name in metric_point and m_val is not None:
-                        metric_point[m_name] = float(m_val)
-                
-                # Check if item is a sample container containing a "metrics" array
-                if 'metrics' in item and isinstance(item['metrics'], list):
-                    for sub in item['metrics']:
+            if is_nested:
+                # Nested format from standalone_agent: expand each sample into its own data point
+                for sample_item in samples:
+                    if not isinstance(sample_item, dict):
+                        continue
+                    
+                    # Use sample's own timestamp if available, else fallback to batch timestamp
+                    sample_ts_raw = sample_item.get('timestamp')
+                    if sample_ts_raw:
+                        try:
+                            sd = datetime.fromisoformat(sample_ts_raw.replace("Z", "+00:00"))
+                            if sd.tzinfo is None:
+                                sd = sd.replace(tzinfo=timezone.utc)
+                            sample_ts = sd.isoformat().replace("+00:00", "Z")
+                            if not sample_ts.endswith("Z"):
+                                sample_ts += "Z"
+                        except Exception:
+                            sample_ts = batch_ts
+                    else:
+                        sample_ts = batch_ts
+
+                    metric_point = {
+                        'timestamp': sample_ts,
+                        'hostname': hostname,
+                        'cpu_percent': None,
+                        'mem_percent': None,
+                        'disk_percent': None,
+                        'disk_free_gb': None,
+                        'disk_total_gb': None,
+                        'net_bytes_sent': None,
+                        'net_bytes_recv': None
+                    }
+                    
+                    for sub in sample_item.get('metrics', []):
                         if isinstance(sub, dict) and 'metric' in sub and 'value' in sub:
                             m_name = sub.get('metric')
                             m_val = sub.get('value')
                             if m_name in metric_point and m_val is not None:
                                 metric_point[m_name] = float(m_val)
-
-            # Only include point if at least CPU or Memory metric was extracted
-            if metric_point['cpu_percent'] is not None or metric_point['mem_percent'] is not None:
-                metrics.append(metric_point)
+                    
+                    if metric_point['cpu_percent'] is not None or metric_point['mem_percent'] is not None:
+                        metrics.append(metric_point)
+            else:
+                # Flat format from run.py: one data point per batch row
+                metric_point = {
+                    'timestamp': batch_ts,
+                    'hostname': hostname,
+                    'cpu_percent': None,
+                    'mem_percent': None,
+                    'disk_percent': None,
+                    'disk_free_gb': None,
+                    'disk_total_gb': None,
+                    'net_bytes_sent': None,
+                    'net_bytes_recv': None
+                }
+                
+                for item in samples:
+                    if not isinstance(item, dict):
+                        continue
+                    if 'metric' in item and 'value' in item:
+                        m_name = item.get('metric')
+                        m_val = item.get('value')
+                        if m_name in metric_point and m_val is not None:
+                            metric_point[m_name] = float(m_val)
+                
+                if metric_point['cpu_percent'] is not None or metric_point['mem_percent'] is not None:
+                    metrics.append(metric_point)
 
         # Trigger auto-remediation check if latest disk usage >= 90%
         if metrics:

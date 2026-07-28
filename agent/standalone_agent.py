@@ -187,6 +187,7 @@ def main():
             if len(buffer) >= 1 or elapsed >= 3:
                 batch = {
                     "host_id": host_id,
+                    "hostname": hostname,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "interval": INTERVAL,
                     "samples": buffer
