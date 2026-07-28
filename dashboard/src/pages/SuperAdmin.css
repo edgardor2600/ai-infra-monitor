@@ -1,0 +1,434 @@
+/* SuperAdmin Management Dashboard Styles */
+
+.superadmin-container {
+  padding: 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+  color: #e2e8f0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Toast Notifications */
+.superadmin-toast {
+  position: fixed;
+  top: 1.5rem;
+  right: 1.5rem;
+  z-index: 9999;
+  padding: 1rem 1.5rem;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(12px);
+  animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.superadmin-toast.success {
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.5);
+  color: #34d399;
+}
+
+.superadmin-toast.danger {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  color: #f87171;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Header Banner Card */
+.superadmin-header-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+  border-radius: 16px;
+  padding: 1.75rem 2rem;
+  margin-bottom: 1.75rem;
+  backdrop-filter: blur(10px);
+}
+
+.superadmin-title-area h1 {
+  font-size: 1.8rem;
+  font-weight: 800;
+  margin: 0 0 0.3rem 0;
+  background: linear-gradient(90deg, #f59e0b, #ec4899, #3b82f6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.superadmin-title-area p {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.95rem;
+}
+
+.superadmin-refresh-btn {
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  color: #60a5fa;
+  padding: 0.7rem 1.3rem;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.superadmin-refresh-btn:hover {
+  background: rgba(59, 130, 246, 0.3);
+  border-color: #60a5fa;
+  transform: translateY(-2px);
+}
+
+/* KPI Cards Grid */
+.superadmin-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 1.75rem;
+}
+
+.superadmin-kpi-card {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 1.25rem;
+  backdrop-filter: blur(8px);
+  transition: transform 0.2s ease;
+}
+
+.superadmin-kpi-card:hover {
+  transform: translateY(-3px);
+}
+
+.superadmin-kpi-card.gold { border-left: 4px solid #f59e0b; }
+.superadmin-kpi-card.cyan { border-left: 4px solid #06b6d4; }
+.superadmin-kpi-card.purple { border-left: 4px solid #a855f7; }
+.superadmin-kpi-card.green { border-left: 4px solid #10b981; }
+
+.kpi-icon {
+  font-size: 2rem;
+}
+
+.kpi-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.kpi-label {
+  font-size: 0.85rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.kpi-value {
+  font-size: 1.7rem;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+/* Controls Bar */
+.superadmin-controls-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 1rem 1.5rem;
+  margin-bottom: 1.75rem;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 0.5rem 1rem;
+  flex: 1;
+  max-width: 450px;
+}
+
+.search-icon {
+  margin-right: 0.5rem;
+  color: #64748b;
+}
+
+.search-box input {
+  background: transparent;
+  border: none;
+  color: #f8fafc;
+  outline: none;
+  width: 100%;
+  font-size: 0.95rem;
+}
+
+.filter-box {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+
+.filter-box select {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #f8fafc;
+  padding: 0.5rem 1rem;
+  border-radius: 10px;
+  outline: none;
+  font-weight: 500;
+}
+
+/* Table Card */
+.superadmin-table-card {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(10px);
+}
+
+.superadmin-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.superadmin-table th {
+  background: rgba(15, 23, 42, 0.9);
+  color: #94a3b8;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 1.1rem 1.2rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.superadmin-table td {
+  padding: 1rem 1.2rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.92rem;
+}
+
+.superadmin-table tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.col-id {
+  font-family: monospace;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.user-email-badge {
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+/* Role Select */
+.role-select {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #e2e8f0;
+  padding: 0.35rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+}
+
+.role-select.superadmin {
+  border-color: #f59e0b;
+  color: #fbbf24;
+}
+
+.role-select.admin {
+  border-color: #3b82f6;
+  color: #60a5fa;
+}
+
+/* Tier Select */
+.tier-select {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 0.4rem 0.8rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  outline: none;
+  cursor: pointer;
+}
+
+.tier-select.ENTERPRISE {
+  border-color: #a855f7;
+  color: #c084fc;
+  background: rgba(168, 85, 247, 0.15);
+}
+
+.tier-select.PRO_SAAS {
+  border-color: #06b6d4;
+  color: #38bdf8;
+  background: rgba(6, 182, 212, 0.15);
+}
+
+.tier-select.STARTER {
+  border-color: #10b981;
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.15);
+}
+
+/* Actions */
+.col-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.btn-action {
+  border: none;
+  padding: 0.4rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-action.reset {
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  color: #60a5fa;
+}
+
+.btn-action.reset:hover {
+  background: rgba(59, 130, 246, 0.4);
+}
+
+.btn-action.delete {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
+}
+
+.btn-action.delete:hover {
+  background: rgba(239, 68, 68, 0.4);
+}
+
+/* Modals */
+.superadmin-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(6px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+}
+
+.superadmin-modal-card {
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+  border-radius: 16px;
+  padding: 2rem;
+  width: 100%;
+  max-width: 480px;
+}
+
+.superadmin-modal-card.danger {
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.superadmin-modal-card h3 {
+  margin-top: 0;
+  color: #f8fafc;
+}
+
+.form-group {
+  margin-top: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form-group label {
+  font-size: 0.88rem;
+  color: #94a3b8;
+}
+
+.form-group input {
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #f8fafc;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  outline: none;
+  font-size: 0.95rem;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.75rem;
+}
+
+.btn-cancel {
+  background: #334155;
+  border: none;
+  color: #cbd5e1;
+  padding: 0.6rem 1.2rem;
+  border-radius: 9px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-confirm {
+  background: #2563eb;
+  border: none;
+  color: white;
+  padding: 0.6rem 1.2rem;
+  border-radius: 9px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-delete-confirm {
+  background: #dc2626;
+  border: none;
+  color: white;
+  padding: 0.6rem 1.2rem;
+  border-radius: 9px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.superadmin-loading, .no-data {
+  text-align: center;
+  padding: 3rem;
+  color: #94a3b8;
+}
