@@ -78,6 +78,15 @@ def migrate_pro():
             ADD COLUMN IF NOT EXISTS org_id INTEGER REFERENCES organizations(id) DEFAULT 1;
         """)
         print(f"✓ Added org_id to table {table}")
+
+    # 5. Add notification and auto-remediation columns to organizations
+    cursor.execute("""
+        ALTER TABLE organizations
+        ADD COLUMN IF NOT EXISTS webhook_url VARCHAR(500),
+        ADD COLUMN IF NOT EXISTS notification_email VARCHAR(255),
+        ADD COLUMN IF NOT EXISTS auto_remediation_enabled BOOLEAN DEFAULT true;
+    """)
+    print("✓ Added webhook_url, notification_email, auto_remediation_enabled to organizations table")
         
     conn.commit()
     cursor.close()

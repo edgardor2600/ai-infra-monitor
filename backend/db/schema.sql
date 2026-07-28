@@ -120,6 +120,19 @@ CREATE TABLE cleanup_items (
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- Create scheduled_disk_cleanups table for automated cron maintenance
+CREATE TABLE scheduled_disk_cleanups (
+    id SERIAL PRIMARY KEY,
+    host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+    org_id INTEGER NOT NULL DEFAULT 1,
+    enabled BOOLEAN DEFAULT true,
+    categories TEXT[] NOT NULL DEFAULT ARRAY['temp_files', 'browser_cache', 'recycle_bin'],
+    interval_hours INTEGER NOT NULL DEFAULT 24,
+    last_run_at TIMESTAMP,
+    next_run_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 -- Create indexes for disk analyzer tables
 CREATE INDEX idx_disk_scans_host_id ON disk_scans(host_id);
 CREATE INDEX idx_disk_scans_status ON disk_scans(status);
@@ -129,3 +142,5 @@ CREATE INDEX idx_cleanup_operations_host_id ON cleanup_operations(host_id);
 CREATE INDEX idx_cleanup_operations_status ON cleanup_operations(status);
 CREATE INDEX idx_cleanup_items_scan_id ON cleanup_items(scan_id);
 CREATE INDEX idx_cleanup_items_category ON cleanup_items(category);
+CREATE INDEX idx_scheduled_cleanups_host ON scheduled_disk_cleanups(host_id);
+CREATE INDEX idx_scheduled_cleanups_next_run ON scheduled_disk_cleanups(next_run_at);
