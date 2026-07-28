@@ -2,20 +2,18 @@ services:
   - type: web
     name: ai-infra-monitor-api
     env: python
-    dockerfilePath: Dockerfile
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     plan: free
     envVars:
       - key: DB_HOST
         sync: false
       - key: DB_PORT
-        sync: false
         value: "5432"
       - key: DB_NAME
-        sync: false
         value: "postgres"
       - key: DB_USER
-        sync: false
         value: "postgres"
       - key: DB_PASSWORD
         sync: false
@@ -24,28 +22,24 @@ services:
       - key: MINIMAX_API_KEY
         sync: false
       - key: ALLOWED_ORIGINS
-        sync: false
+        value: "*"
       - key: JWT_SECRET
         generateValue: true
 
   - type: worker
     name: ai-infra-monitor-worker
     env: python
-    dockerfilePath: Dockerfile
-    buildCommand: ""
+    buildCommand: pip install -r requirements.txt
     startCommand: python backend/worker/run_worker.py
     plan: free
     envVars:
       - key: DB_HOST
         sync: false
       - key: DB_PORT
-        sync: false
         value: "5432"
       - key: DB_NAME
-        sync: false
         value: "postgres"
       - key: DB_USER
-        sync: false
         value: "postgres"
       - key: DB_PASSWORD
         sync: false
