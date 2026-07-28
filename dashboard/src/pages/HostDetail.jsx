@@ -99,13 +99,6 @@ function HostDetail() {
 
   const formatTimeLabel = (ts) => {
     if (!ts) return 'N/A';
-    if (typeof ts === 'string' && ts.includes('T')) {
-      const parts = ts.split('T');
-      if (parts.length >= 2) {
-        const timePart = parts[1].split('.')[0].split('+')[0].split('Z')[0];
-        if (timePart) return timePart;
-      }
-    }
     const d = new Date(ts);
     if (!isNaN(d.getTime())) {
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });

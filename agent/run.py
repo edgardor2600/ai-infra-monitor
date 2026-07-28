@@ -79,9 +79,9 @@ async def run(dry_run: bool = False):
         dry_run: If True, prints batches without sending them
     """
     # Read configuration from environment
-    interval = float(os.getenv("AGENT_INTERVAL", "5"))
-    batch_max = int(os.getenv("AGENT_BATCH_MAX", "20"))
-    batch_timeout = float(os.getenv("AGENT_BATCH_TIMEOUT", "20"))
+    interval = float(os.getenv("AGENT_INTERVAL", "3"))
+    batch_max = int(os.getenv("AGENT_BATCH_MAX", "7"))
+    batch_timeout = float(os.getenv("AGENT_BATCH_TIMEOUT", "3"))
     backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")
     
     # Auto-register host if AGENT_HOST_ID not explicitly set

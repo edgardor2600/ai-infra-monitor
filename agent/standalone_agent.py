@@ -29,7 +29,12 @@ logging.basicConfig(
 logger = logging.getLogger("StandaloneAgent")
 
 BACKEND_URL = os.getenv("BACKEND_URL", "https://ai-infra-monitor-api.onrender.com").rstrip("/")
-INTERVAL = int(os.getenv("AGENT_INTERVAL", "5"))
+INTERVAL = int(os.getenv("AGENT_INTERVAL", "3"))
+
+...
+
+            elapsed = time.monotonic() - timer_start
+            if len(buffer) >= 1 or elapsed >= 3:
 
 WINDOWS_SYSTEM_PROCESSES = {
     'System', 'Registry', 'smss.exe', 'csrss.exe', 'wininit.exe',
@@ -168,7 +173,7 @@ def main():
             buffer.append(sample)
             
             elapsed = time.monotonic() - timer_start
-            if len(buffer) >= 3 or elapsed >= 15:
+            if len(buffer) >= 1 or elapsed >= 3:
                 batch = {
                     "host_id": host_id,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
