@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS process_metrics (
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
--- 7. Create Alerts table
+-- 7. Create Alerts table (Enriched V2 Schema)
 CREATE TABLE IF NOT EXISTS alerts (
     id SERIAL PRIMARY KEY,
     org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE DEFAULT 1,
@@ -77,10 +77,52 @@ CREATE TABLE IF NOT EXISTS alerts (
     severity TEXT NOT NULL,
     message TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'open',
+    rule_name VARCHAR(100),
+    threshold_value FLOAT,
+    actual_value FLOAT,
+    occurrences_count INTEGER DEFAULT 1,
+    last_seen_at TIMESTAMPTZ DEFAULT NOW(),
+    resolved_at TIMESTAMPTZ,
+    duration_seconds INTEGER,
+    ai_diagnosis TEXT,
+    ai_recommendation TEXT,
+    acknowledged_by VARCHAR(255),
+    acknowledged_at TIMESTAMPTZ,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
--- 8. Create Analyses table (AI Analysis results)
+-- Ensure all V2 columns exist on pre-existing tables
+ALTER TABLE alerts
+    ADD COLUMN IF NOT EXISTS rule_name VARCHAR(100),
+    ADD COLUMN IF NOT EXISTS threshold_value FLOAT,
+    ADD COLUMN IF NOT EXISTS actual_value FLOAT,
+    ADD COLUMN IF NOT EXISTS occurrences_count INTEGER DEFAULT 1,
+    ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS duration_seconds INTEGER,
+    ADD COLUMN IF NOT EXISTS ai_diagnosis TEXT,
+    ADD COLUMN IF NOT EXISTS ai_recommendation TEXT,
+    ADD COLUMN IF NOT EXISTS acknowledged_by VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS org_id INTEGER REFERENCES organizations(id) DEFAULT 1;
+
+-- 8. Create Incidents table
+CREATE TABLE IF NOT EXISTS incidents (
+    id SERIAL PRIMARY KEY,
+    org_id INTEGER NOT NULL DEFAULT 1 REFERENCES organizations(id) ON DELETE CASCADE,
+    host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'open',
+    severity VARCHAR(10) NOT NULL DEFAULT 'HIGH',
+    alert_ids INTEGER[] DEFAULT '{}',
+    ai_root_cause TEXT,
+    ai_next_steps TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    resolved_at TIMESTAMPTZ
+);
+
+-- 9. Create Analyses table (AI Analysis results)
 CREATE TABLE IF NOT EXISTS analyses (
     id SERIAL PRIMARY KEY,
     host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
@@ -89,7 +131,7 @@ CREATE TABLE IF NOT EXISTS analyses (
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
--- 9. Create Disk Scans table
+-- 10. Create Disk Scans table
 CREATE TABLE IF NOT EXISTS disk_scans (
     id SERIAL PRIMARY KEY,
     org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE DEFAULT 1,
@@ -103,7 +145,7 @@ CREATE TABLE IF NOT EXISTS disk_scans (
     completed_at TIMESTAMP
 );
 
--- 10. Create Cleanup Operations table
+-- 11. Create Cleanup Operations table
 CREATE TABLE IF NOT EXISTS cleanup_operations (
     id SERIAL PRIMARY KEY,
     org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE DEFAULT 1,
@@ -119,7 +161,7 @@ CREATE TABLE IF NOT EXISTS cleanup_operations (
     completed_at TIMESTAMP
 );
 
--- 11. Create Cleanup Items table
+-- 12. Create Cleanup Items table
 CREATE TABLE IF NOT EXISTS cleanup_items (
     id SERIAL PRIMARY KEY,
     scan_id INTEGER NOT NULL REFERENCES disk_scans(id) ON DELETE CASCADE,
@@ -132,7 +174,7 @@ CREATE TABLE IF NOT EXISTS cleanup_items (
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
--- 12. Create Cleanup Audit Logs table
+-- 13. Create Cleanup Audit Logs table
 CREATE TABLE IF NOT EXISTS cleanup_audit_logs (
     id SERIAL PRIMARY KEY,
     org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE DEFAULT 1,
@@ -159,6 +201,7 @@ CREATE INDEX IF NOT EXISTS idx_process_metrics_name ON process_metrics(process_n
 CREATE INDEX IF NOT EXISTS idx_alerts_host_id ON alerts(host_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_severity ON alerts(severity);
 CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status);
+CREATE INDEX IF NOT EXISTS idx_alerts_rule_name ON alerts(rule_name);
 CREATE INDEX IF NOT EXISTS idx_analyses_host_id ON analyses(host_id);
 
 CREATE INDEX IF NOT EXISTS idx_disk_scans_host_id ON disk_scans(host_id);

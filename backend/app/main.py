@@ -24,13 +24,16 @@ logger = logging.getLogger(__name__)
 
 import asyncio
 from backend.worker.run_worker import worker_loop
+from backend.db.auto_migrate import auto_migrate_schema
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager replacing deprecated startup/shutdown events."""
     logger.info("AI Infra Monitor Backend starting up...")
-    # Start background worker task inside the web service
+    # 1. Run automatic schema migration to guarantee all columns exist
+    auto_migrate_schema()
+    # 2. Start background worker task inside the web service
     worker_task = asyncio.create_task(worker_loop())
     yield
     worker_task.cancel()
