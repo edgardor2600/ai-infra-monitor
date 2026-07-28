@@ -96,8 +96,62 @@ from backend.db.connection import get_db_connection
 
 
 @router.get("/drives", response_model=dict)
-async def get_drives():
-    """Get list of available disk drives and free space info."""
+async def get_drives(host_id: Optional[int] = 1):
+    """Get list of available disk drives and free space info for host using agent telemetry."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT payload FROM metrics 
+            WHERE host_id = %s 
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            (host_id or 1,)
+        )
+        row = cursor.fetchone()
+        if row and row[0]:
+            payload = row[0]
+            metrics_dict = {}
+            if isinstance(payload, list):
+                for item in payload:
+                    if isinstance(item, dict) and 'metric' in item:
+                        metrics_dict[item['metric']] = item.get('value')
+            elif isinstance(payload, dict):
+                metrics_dict = payload.get('metrics', {})
+
+            disk_total_gb = metrics_dict.get('disk_total_gb')
+            disk_free_gb = metrics_dict.get('disk_free_gb')
+            disk_percent = metrics_dict.get('disk_percent')
+
+            if disk_total_gb and disk_free_gb:
+                total_bytes = int(float(disk_total_gb) * (1024 ** 3))
+                free_bytes = int(float(disk_free_gb) * (1024 ** 3))
+                used_bytes = total_bytes - free_bytes
+                percent = float(disk_percent) if disk_percent is not None else round((used_bytes / total_bytes) * 100, 2)
+
+                drives = [{
+                    'device': 'C:',
+                    'drive': 'C:',
+                    'mountpoint': 'C:\\',
+                    'fstype': 'NTFS',
+                    'total': total_bytes,
+                    'used': used_bytes,
+                    'free': free_bytes,
+                    'free_bytes': free_bytes,
+                    'total_bytes': total_bytes,
+                    'used_bytes': used_bytes,
+                    'used_percent': percent,
+                    'percent_used': percent
+                }]
+                return {"drives": drives}
+    except Exception as e:
+        logger.warning(f"Error fetching host disk metrics from DB: {e}")
+    finally:
+        if conn:
+            conn.close()
+
     drives = DiskScanner.get_available_drives()
     return {"drives": drives}
 

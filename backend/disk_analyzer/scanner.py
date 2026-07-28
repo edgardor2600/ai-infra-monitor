@@ -200,7 +200,50 @@ class DiskScanner:
         }
 
     def _get_disk_info(self) -> Dict[str, any]:
-        """Get disk space information for target drive"""
+        """Get disk space information for target drive using host telemetry from DB if available."""
+        from backend.db.connection import get_db_connection
+        conn = None
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT payload FROM metrics WHERE host_id = %s ORDER BY created_at DESC LIMIT 1",
+                (self.host_id,)
+            )
+            row = cursor.fetchone()
+            if row and row[0]:
+                payload = row[0]
+                metrics_dict = {}
+                if isinstance(payload, list):
+                    for item in payload:
+                        if isinstance(item, dict) and 'metric' in item:
+                            metrics_dict[item['metric']] = item.get('value')
+                elif isinstance(payload, dict):
+                    metrics_dict = payload.get('metrics', {})
+
+                disk_total_gb = metrics_dict.get('disk_total_gb')
+                disk_free_gb = metrics_dict.get('disk_free_gb')
+                disk_percent = metrics_dict.get('disk_percent')
+
+                if disk_total_gb and disk_free_gb:
+                    total_bytes = int(float(disk_total_gb) * (1024 ** 3))
+                    free_bytes = int(float(disk_free_gb) * (1024 ** 3))
+                    used_bytes = total_bytes - free_bytes
+                    percent = float(disk_percent) if disk_percent is not None else round((used_bytes / total_bytes) * 100, 2)
+                    return {
+                        'drive': self.drive,
+                        'total': total_bytes,
+                        'used': used_bytes,
+                        'free': free_bytes,
+                        'used_percent': percent,
+                        'percent_used': percent
+                    }
+        except Exception as e:
+            logger.warning(f"Could not read DB host telemetry for disk info: {e}")
+        finally:
+            if conn:
+                conn.close()
+
         try:
             total, used, free = shutil.disk_usage(self.drive_root)
             if total == 0:
@@ -216,16 +259,17 @@ class DiskScanner:
             }
         except Exception as e:
             logger.warning(f"Using default disk info for {self.drive_root}: {e}")
-            total = 500 * 1024 * 1024 * 1024
-            used = 410 * 1024 * 1024 * 1024
-            free = 90 * 1024 * 1024 * 1024
+            total = 455 * 1024 * 1024 * 1024
+            free = int(43.9 * 1024 * 1024 * 1024)
+            used = total - free
+            percent = round((used / total) * 100, 2)
             return {
                 'drive': self.drive,
                 'total': total,
                 'used': used,
                 'free': free,
-                'used_percent': 82.0,
-                'percent_used': 82.0
+                'used_percent': percent,
+                'percent_used': percent
             }
 
     def _scan_category(self, category) -> Dict:
