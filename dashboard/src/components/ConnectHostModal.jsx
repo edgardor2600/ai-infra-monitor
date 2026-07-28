@@ -7,8 +7,8 @@ const ConnectHostModal = ({ isOpen, onClose }) => {
 
   if (!isOpen) return null;
 
-  const winCommand = `pip install psutil requests httpx; python -m agent run --backend-url ${backendUrl}`;
-  const linuxCommand = `pip install psutil requests httpx && python -m agent run --backend-url ${backendUrl}`;
+  const winCommand = `git clone https://github.com/edgardor2600/ai-infra-monitor.git && cd ai-infra-monitor && pip install psutil requests httpx && python -m agent run --backend-url ${backendUrl}`;
+  const linuxCommand = `git clone https://github.com/edgardor2600/ai-infra-monitor.git && cd ai-infra-monitor && pip install psutil requests httpx && python -m agent run --backend-url ${backendUrl}`;
 
   const copyToClipboard = (text, osType) => {
     navigator.clipboard.writeText(text);
