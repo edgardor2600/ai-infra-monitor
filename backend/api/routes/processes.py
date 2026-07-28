@@ -54,6 +54,7 @@ async def get_top_processes(
             WHERE host_id = %s
               AND payload->'processes' IS NOT NULL
               AND jsonb_array_length(payload->'processes') > 0
+              AND created_at >= NOW() - INTERVAL '24 hours'
             ORDER BY created_at DESC
             LIMIT 1
             """,
@@ -180,6 +181,7 @@ async def get_process_history(
                      jsonb_array_elements(payload->'processes') as p
                 WHERE host_id = %s
                   AND LOWER(p->>'name') = LOWER(%s)
+                  AND created_at >= NOW() - INTERVAL '24 hours'
                 ORDER BY created_at DESC
                 LIMIT 50
                 """,

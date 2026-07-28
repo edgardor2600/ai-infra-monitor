@@ -60,7 +60,9 @@ def _avg_metric(cursor, host_id: int, metric: str, interval_seconds: int) -> flo
 
 
 def _latest_metric(cursor, host_id: int, metric: str) -> float:
-    """Get the single most recent value for a metric."""
+    """Get the single most recent value for a metric, within the last 24 hours.
+    Returns 0.0 if no recent data exists (prevents stale/synthetic values from old rows).
+    """
     cursor.execute(
         """
         SELECT (sample->>'value')::float
@@ -68,6 +70,7 @@ def _latest_metric(cursor, host_id: int, metric: str) -> float:
              jsonb_array_elements(payload->'samples') AS sample
         WHERE host_id = %s
           AND sample->>'metric' = %s
+          AND created_at >= NOW() - INTERVAL '24 hours'
         ORDER BY created_at DESC
         LIMIT 1
         """,

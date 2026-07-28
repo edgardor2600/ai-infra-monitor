@@ -70,6 +70,7 @@ async def get_dashboard_overview(authorization: Optional[str] = Header(None)) ->
                     payload,
                     created_at
                 FROM metrics_raw
+                WHERE created_at >= NOW() - INTERVAL '24 hours'
                 ORDER BY host_id, created_at DESC
             ),
             host_alerts AS (
