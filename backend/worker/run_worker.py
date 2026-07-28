@@ -30,21 +30,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def get_db_connection():
-    """
-    Create a database connection using environment variables.
-    
-    Returns:
-        psycopg2.connection: Database connection object
-    """
-    conn = psycopg2.connect(
-        dbname=os.getenv("DB_NAME", "ai_infra_monitor"),
-        user=os.getenv("DB_USER", "postgres"),
-        password=os.getenv("DB_PASSWORD"),
-        host=os.getenv("DB_HOST", "localhost"),
-        port=os.getenv("DB_PORT", "5432")
-    )
-    return conn
+from backend.db.connection import get_db_connection
 
 
 async def worker_loop():

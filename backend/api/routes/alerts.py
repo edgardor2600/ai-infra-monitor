@@ -25,14 +25,7 @@ router = APIRouter()
 # DB helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_db_connection():
-    return psycopg2.connect(
-        dbname=os.getenv("DB_NAME", "ai_infra_monitor"),
-        user=os.getenv("DB_USER", "postgres"),
-        password=os.getenv("DB_PASSWORD", "123"),
-        host=os.getenv("DB_HOST", "localhost"),
-        port=os.getenv("DB_PORT", "5432"),
-    )
+from backend.db.connection import get_db_connection
 
 
 def get_current_user(authorization: Optional[str] = None) -> Dict[str, Any]:

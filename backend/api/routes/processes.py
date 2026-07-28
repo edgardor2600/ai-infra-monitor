@@ -21,31 +21,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["processes"])
 
 
-def get_db_connection():
-    """
-    Create a database connection using environment variables.
-    
-    Returns:
-        psycopg2.connection: Database connection object
-    
-    Raises:
-        HTTPException: If connection fails
-    """
-    try:
-        conn = psycopg2.connect(
-            dbname=os.getenv("DB_NAME", "ai_infra_monitor"),
-            user=os.getenv("DB_USER", "postgres"),
-            password=os.getenv("DB_PASSWORD"),
-            host=os.getenv("DB_HOST", "localhost"),
-            port=os.getenv("DB_PORT", "5432")
-        )
-        return conn
-    except psycopg2.Error as e:
-        logger.error(f"Database connection error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database connection failed"
-        )
+from backend.db.connection import get_db_connection
 
 
 @router.get("/processes/top")

@@ -13,15 +13,7 @@ from backend.api.routes.auth import decode_jwt_token
 
 router = APIRouter()
 
-def get_db_connection():
-    """Create a database connection."""
-    return psycopg2.connect(
-        dbname=os.getenv("DB_NAME", "ai_infra_monitor"),
-        user=os.getenv("DB_USER", "postgres"),
-        password=os.getenv("DB_PASSWORD"),
-        host=os.getenv("DB_HOST", "localhost"),
-        port=os.getenv("DB_PORT", "5432")
-    )
+from backend.db.connection import get_db_connection
 
 
 def get_current_org_id(authorization: Optional[str] = None) -> int:
