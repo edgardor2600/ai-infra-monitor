@@ -3,10 +3,13 @@ import { Link } from 'react-router-dom';
 import { getDashboardOverview } from '../api';
 import './Dashboard.css';
 
+import ConnectHostModal from '../components/ConnectHostModal';
+
 function Dashboard() {
   const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isConnectOpen, setIsConnectOpen] = useState(false);
 
   useEffect(() => {
     loadOverview();
@@ -52,7 +55,62 @@ function Dashboard() {
 
   return (
     <div className="dashboard">
-      <h1>Infrastructure Overview</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <h1 style={{ margin: 0 }}>Infrastructure Overview</h1>
+        <button 
+          onClick={() => setIsConnectOpen(true)}
+          style={{
+            background: 'linear-gradient(135deg, #10b981, #059669)',
+            color: '#ffffff',
+            border: 'none',
+            padding: '10px 18px',
+            borderRadius: '8px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)'
+          }}
+        >
+          ➕ Conectar Servidor / Agente
+        </button>
+      </div>
+
+      {/* Onboarding Banner */}
+      <div style={{
+        background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(16, 185, 129, 0.15))',
+        border: '1px solid rgba(99, 102, 241, 0.3)',
+        borderRadius: '12px',
+        padding: '20px 24px',
+        marginBottom: '24px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '16px'
+      }}>
+        <div>
+          <h3 style={{ margin: '0 0 6px 0', color: '#ffffff', fontSize: '17px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            🚀 ¿Cómo conectar un nuevo servidor o laptop en 1 minuto?
+          </h3>
+          <p style={{ margin: 0, color: '#9ca3af', fontSize: '14px', lineHeight: '1.4' }}>
+            Ejecuta nuestro comando de 1 sola línea en la terminal de cualquier equipo para recibir CPU, RAM, Procesos y Discos en tiempo real.
+          </p>
+        </div>
+        <button 
+          onClick={() => setIsConnectOpen(true)}
+          style={{
+            background: '#374151',
+            color: '#ffffff',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            padding: '10px 18px',
+            borderRadius: '8px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          📋 Ver Paso a Paso y Comando
+        </button>
+      </div>
 
       {/* Summary Cards */}
       <div className="summary-cards">
@@ -163,11 +221,13 @@ function Dashboard() {
             </div>
           ))}
 
-          {overview.recent_alerts.length === 0 && (
-            <div className="no-data">No active alerts</div>
-          )}
         </div>
       </div>
+
+      <ConnectHostModal 
+        isOpen={isConnectOpen} 
+        onClose={() => setIsConnectOpen(false)} 
+      />
     </div>
   );
 }

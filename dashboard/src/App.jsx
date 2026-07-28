@@ -11,10 +11,14 @@ import Login from './pages/Login';
 import SuperAdmin from './pages/SuperAdmin';
 import './App.css';
 
+import { useState } from 'react';
+import ConnectHostModal from './components/ConnectHostModal';
+
 const NavigationBar = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [isConnectOpen, setIsConnectOpen] = useState(false);
 
   if (!user) return null; // Hide navigation bar if user is not logged in
 
@@ -26,63 +30,88 @@ const NavigationBar = () => {
   };
 
   return (
-    <nav className="navbar">
-      <div className="nav-container">
-        <Link to="/" className="nav-brand">
-          <span className="nav-brand-icon">⚡</span> AI Infra Monitor
-        </Link>
-        
-        <div className="nav-links">
-          <NavLink
-            to="/dashboard"
-            className={({ isActive }) => `nav-link ${isActive || location.pathname === '/' ? 'active' : ''}`}
-          >
-            📊 Dashboard
-          </NavLink>
+    <>
+      <nav className="navbar">
+        <div className="nav-container">
+          <Link to="/" className="nav-brand">
+            <span className="nav-brand-icon">⚡</span> AI Infra Monitor
+          </Link>
           
-          <NavLink
-            to="/hosts"
-            className={({ isActive }) => `nav-link ${isActive || location.pathname.startsWith('/hosts') ? 'active' : ''}`}
-          >
-            🖥️ Hosts
-          </NavLink>
-
-          <NavLink
-            to="/alerts"
-            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-          >
-            🔔 Alertas
-          </NavLink>
-
-          <NavLink
-            to="/disk-analyzer"
-            className={({ isActive }) => `nav-link nav-link-disk-analyzer ${isActive ? 'active' : ''}`}
-          >
-            💾 Disk Analyzer AI
-          </NavLink>
-
-          {isSuperAdmin && (
+          <div className="nav-links">
             <NavLink
-              to="/admin"
-              className={({ isActive }) => `nav-link nav-link-superadmin ${isActive ? 'active' : ''}`}
+              to="/dashboard"
+              className={({ isActive }) => `nav-link ${isActive || location.pathname === '/' ? 'active' : ''}`}
             >
-              👑 SuperAdmin
+              📊 Dashboard
             </NavLink>
-          )}
-          
-          <div className="nav-user-pill">
-            <span className="user-email-text">👤 {user.email}</span>
-            <span className="user-tier-badge">[{user.license_tier || 'STARTER'}]</span>
-            {user.organization_name && (
-              <span className="user-org-name">({user.organization_name})</span>
-            )}
-            <button onClick={handleLogout} className="nav-logout-btn">
-              🚪 Salir
+            
+            <NavLink
+              to="/hosts"
+              className={({ isActive }) => `nav-link ${isActive || location.pathname.startsWith('/hosts') ? 'active' : ''}`}
+            >
+              🖥️ Hosts
+            </NavLink>
+
+            <NavLink
+              to="/alerts"
+              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+            >
+              🔔 Alertas
+            </NavLink>
+
+            <NavLink
+              to="/disk-analyzer"
+              className={({ isActive }) => `nav-link nav-link-disk-analyzer ${isActive ? 'active' : ''}`}
+            >
+              💾 Disk Analyzer AI
+            </NavLink>
+
+            <button 
+              onClick={() => setIsConnectOpen(true)} 
+              className="nav-link nav-btn-connect-host"
+              style={{
+                background: 'linear-gradient(135deg, #10b981, #059669)',
+                color: '#ffffff',
+                border: 'none',
+                padding: '6px 14px',
+                borderRadius: '8px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                boxShadow: '0 2px 10px rgba(16, 185, 129, 0.3)',
+                marginRight: '8px'
+              }}
+            >
+              ➕ Conectar Servidor
             </button>
+
+            {isSuperAdmin && (
+              <NavLink
+                to="/admin"
+                className={({ isActive }) => `nav-link nav-link-superadmin ${isActive ? 'active' : ''}`}
+              >
+                👑 SuperAdmin
+              </NavLink>
+            )}
+            
+            <div className="nav-user-pill">
+              <span className="user-email-text">👤 {user.email}</span>
+              <span className="user-tier-badge">[{user.license_tier || 'STARTER'}]</span>
+              {user.organization_name && (
+                <span className="user-org-name">({user.organization_name})</span>
+              )}
+              <button onClick={handleLogout} className="nav-logout-btn">
+                🚪 Salir
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    </nav>
+      </nav>
+
+      <ConnectHostModal 
+        isOpen={isConnectOpen} 
+        onClose={() => setIsConnectOpen(false)} 
+      />
+    </>
   );
 };
 
