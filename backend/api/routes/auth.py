@@ -3,7 +3,6 @@ Authentication & Multi-Tenant User Management Routes for Pro SaaS Edition.
 Uses PBKDF2 password hashing and signed JWT Access Tokens.
 """
 
-from backend.api.routes.dashboard import get_current_org_id
 import os
 import json
 import base64
@@ -101,6 +100,19 @@ def decode_jwt_token(token: str) -> Dict[str, Any]:
         raise
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Token validation error: {str(e)}")
+
+
+
+def get_current_org_id(authorization: Optional[str] = None) -> int:
+    """Extract org_id from JWT token in Authorization header."""
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            token = authorization.split(" ")[1]
+            payload = decode_jwt_token(token)
+            return payload.get("org_id", 1)
+        except Exception:
+            pass
+    return 1
 
 
 # --- Request Models ---

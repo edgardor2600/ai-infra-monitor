@@ -9,23 +9,11 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from fastapi import APIRouter, Header
 from typing import Dict, Any, List, Optional
-from backend.api.routes.auth import decode_jwt_token
+from backend.api.routes.auth import decode_jwt_token, get_current_org_id
 
 router = APIRouter()
 
 from backend.db.connection import get_db_connection
-
-
-def get_current_org_id(authorization: Optional[str] = None) -> int:
-    """Extract org_id from JWT token in Authorization header."""
-    if authorization and authorization.startswith("Bearer "):
-        try:
-            token = authorization.split(" ")[1]
-            payload = decode_jwt_token(token)
-            return payload.get("org_id", 1)
-        except Exception:
-            pass
-    return 1
 
 
 @router.get("/dashboard/overview")
