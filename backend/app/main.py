@@ -12,6 +12,8 @@ from backend.api.routes.dashboard import router as dashboard_router
 from backend.api.routes.disk_analyzer import router as disk_analyzer_router
 from backend.api.routes.auth import router as auth_router
 
+from contextlib import asynccontextmanager
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -19,17 +21,34 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager replacing deprecated startup/shutdown events."""
+    logger.info("AI Infra Monitor Backend starting up...")
+    yield
+    logger.info("AI Infra Monitor Backend shutting down...")
+
+
 # Initialize FastAPI app
 app = FastAPI(
     title="AI Infra Monitor Backend",
     description="Backend API for AI Infrastructure Monitoring",
-    version="0.1.0"
+    version="0.1.0",
+    lifespan=lifespan
 )
 
+import os
+
 # Configure CORS
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
+if not origins:
+    origins = ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5173"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],  # Vite default port
+    allow_origins=origins if "*" not in origins else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -96,15 +115,3 @@ async def health_check():
         status_code=200,
         content={"status": "ok"}
     )
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Log application startup"""
-    logger.info("AI Infra Monitor Backend starting up...")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Log application shutdown"""
-    logger.info("AI Infra Monitor Backend shutting down...")
