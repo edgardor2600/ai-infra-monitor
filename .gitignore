@@ -10,3 +10,7 @@ __pycache__/
 # Entornos virtuales
 venv/
 .venv/
+
+# Reportes de prueba/diagnóstico
+informe_corporativo_disco_scan_*.json
+
