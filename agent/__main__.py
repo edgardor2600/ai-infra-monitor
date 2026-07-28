@@ -36,24 +36,23 @@ def cli():
     is_flag=True,
     help="Run in dry-run mode (print batches without sending)"
 )
-def run(dry_run: bool):
+@click.option(
+    "--backend-url",
+    default=None,
+    help="Backend server URL (e.g. https://ai-infra-monitor-api.onrender.com)"
+)
+def run(dry_run: bool, backend_url: str):
     """
     Run the agent to collect and send metrics.
-    
-    In dry-run mode, the agent collects metrics and prints batches
-    without sending them to the backend.
-    
-    Configuration via environment variables:
-    - AGENT_INTERVAL: Collection interval in seconds (default: 5)
-    - AGENT_BATCH_MAX: Maximum samples before flush (default: 20)
-    - AGENT_BATCH_TIMEOUT: Maximum seconds before flush (default: 20)
-    - BACKEND_URL: Backend server URL (default: http://localhost:8001)
-    - AGENT_HOST_ID: Host identifier (default: 1)
     """
+    import os
+    if backend_url:
+        os.environ["BACKEND_URL"] = backend_url
+
     if dry_run:
         logger.info("Running in dry-run mode")
     else:
-        logger.info("Running agent")
+        logger.info(f"Running agent pointing to backend: {os.getenv('BACKEND_URL', 'http://localhost:8000')}")
     
     try:
         # Import here to avoid circular imports

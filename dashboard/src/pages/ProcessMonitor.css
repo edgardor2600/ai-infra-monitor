@@ -1,229 +1,656 @@
-.process-monitor {
-  padding: 20px;
-  max-width: 1400px;
-  margin: 0 auto;
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* AI Infra Monitor — Process Monitor Telemetry UI                             */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+:root {
+  --pm-bg:          #080c14;
+  --pm-surface:     #0f172a;
+  --pm-card:        #141e33;
+  --pm-card-hover:  #192642;
+  --pm-border:      rgba(255, 255, 255, 0.07);
+  --pm-border-light:rgba(255, 255, 255, 0.12);
+  
+  --pm-accent-cyan:   #38bdf8;
+  --pm-accent-purple: #c084fc;
+  --pm-accent-emerald:#10b981;
+  --pm-accent-amber:  #f59e0b;
+  --pm-accent-rose:   #f43f5e;
+  
+  --pm-text-main:   #f8fafc;
+  --pm-text-muted:  #64748b;
+  --pm-text-sub:    #94a3b8;
 }
 
-.header {
-  margin-bottom: 30px;
+.proc-mon-container {
+  min-height: 100vh;
+  background: var(--pm-bg);
+  padding: 1.75rem 2.25rem;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--pm-text-main);
+  box-sizing: border-box;
 }
 
-.header h1 {
-  margin: 10px 0;
-  color: #333;
-}
-
-.back-link {
-  color: #007bff;
-  text-decoration: none;
-  font-size: 14px;
-}
-
-.back-link:hover {
-  text-decoration: underline;
-}
-
-.tabs {
+/* ── Header Section ──────────────────────────────────────────────────────── */
+.proc-mon-header {
   display: flex;
-  gap: 10px;
-  margin-bottom: 20px;
-  border-bottom: 2px solid #e0e0e0;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 1.75rem;
+  gap: 1.5rem;
+  flex-wrap: wrap;
 }
 
-.tab {
-  padding: 10px 20px;
-  background: none;
+.proc-mon-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.proc-back-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--pm-text-sub);
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--pm-border);
+  padding: 0.25rem 0.65rem;
+  border-radius: 6px;
+  width: fit-content;
+  transition: all 0.2s ease;
+}
+
+.proc-back-badge:hover {
+  color: var(--pm-accent-cyan);
+  background: rgba(56, 189, 248, 0.08);
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+.proc-title-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.proc-title-row h1 {
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0;
+  background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.proc-host-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  color: var(--pm-accent-emerald);
+  padding: 0.25rem 0.6rem;
+  border-radius: 20px;
+}
+
+.proc-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pm-accent-emerald);
+  box-shadow: 0 0 8px var(--pm-accent-emerald);
+  animation: livePulse 2s ease-in-out infinite;
+}
+
+@keyframes livePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+/* ── Toolbar & Controls ──────────────────────────────────────────────────── */
+.proc-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.proc-segmented-control {
+  display: flex;
+  background: var(--pm-surface);
+  border: 1px solid var(--pm-border-light);
+  padding: 3px;
+  border-radius: 10px;
+}
+
+.segment-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: transparent;
   border: none;
-  border-bottom: 3px solid transparent;
+  color: var(--pm-text-sub);
+  font-size: 0.83rem;
+  font-weight: 600;
+  padding: 0.45rem 0.9rem;
+  border-radius: 7px;
   cursor: pointer;
-  font-size: 16px;
-  font-weight: 500;
-  color: #666;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
 }
 
-.tab:hover {
-  color: #333;
-  background-color: #f5f5f5;
+.segment-btn:hover {
+  color: var(--pm-text-main);
 }
 
-.tab.active {
-  color: #007bff;
-  border-bottom-color: #007bff;
+.segment-btn.active {
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--pm-accent-cyan);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-.search-box {
-  margin-bottom: 20px;
+.proc-search-field {
+  position: relative;
+  min-width: 220px;
 }
 
-.search-box input {
+.proc-search-field input {
   width: 100%;
-  max-width: 400px;
-  padding: 10px 15px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
-}
-
-.search-box input:focus {
+  background: var(--pm-surface);
+  border: 1px solid var(--pm-border-light);
+  border-radius: 10px;
+  padding: 0.5rem 2rem 0.5rem 2.2rem;
+  color: var(--pm-text-main);
+  font-size: 0.85rem;
+  font-family: 'Inter', sans-serif;
   outline: none;
-  border-color: #007bff;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
 }
 
-.content-grid {
+.proc-search-field input:focus {
+  border-color: var(--pm-accent-cyan);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.12);
+}
+
+.proc-search-field .search-icon {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--pm-text-muted);
+  font-size: 0.85rem;
+}
+
+.proc-search-field .clear-search {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--pm-text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0 0.3rem;
+}
+
+.proc-search-field .clear-search:hover {
+  color: var(--pm-text-main);
+}
+
+/* ── Split Layout Grid ───────────────────────────────────────────────────── */
+.proc-split-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  gap: 1.5rem;
+  align-items: start;
 }
 
-@media (max-width: 1024px) {
-  .content-grid {
+@media (max-width: 1100px) {
+  .proc-split-grid {
     grid-template-columns: 1fr;
   }
 }
 
-.process-table-container {
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  padding: 20px;
+/* ── Generic Telemetry Cards ────────────────────────────────────────────── */
+.proc-card {
+  background: var(--pm-card);
+  border: 1px solid var(--pm-border);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.proc-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--pm-border);
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.proc-card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.proc-card-icon {
+  font-size: 1.1rem;
+}
+
+.proc-card-title h2 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--pm-text-main);
+  letter-spacing: -0.01em;
+}
+
+.proc-count-tag {
+  font-size: 0.72rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--pm-text-sub);
+  padding: 0.15rem 0.5rem;
+  border-radius: 12px;
+}
+
+.proc-refresh-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--pm-text-muted);
+}
+
+.proc-pulse-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--pm-accent-cyan);
+  box-shadow: 0 0 6px var(--pm-accent-cyan);
+}
+
+.proc-selected-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  font-family: 'JetBrains Mono', monospace;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  color: var(--pm-accent-cyan);
+  padding: 0.25rem 0.65rem;
+  border-radius: 6px;
+}
+
+.proc-selected-badge .pid-sub {
+  color: var(--pm-text-muted);
+  font-size: 0.75rem;
+}
+
+/* ── Process Table Styling ───────────────────────────────────────────────── */
+.proc-table-wrapper {
   overflow-x: auto;
+  max-height: 580px;
+  overflow-y: auto;
 }
 
-.process-table-container h2 {
-  margin-top: 0;
-  margin-bottom: 15px;
-  color: #333;
-  font-size: 18px;
-}
-
-.process-table {
+.proc-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
-}
-
-.process-table thead {
-  background-color: #f8f9fa;
-}
-
-.process-table th {
-  padding: 12px 8px;
   text-align: left;
-  font-weight: 600;
-  color: #555;
-  border-bottom: 2px solid #dee2e6;
+  font-size: 0.84rem;
 }
 
-.process-table tbody tr {
-  border-bottom: 1px solid #e9ecef;
+.proc-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #0f172a;
+}
+
+.proc-table th {
+  padding: 0.75rem 1rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--pm-text-muted);
+  border-bottom: 1px solid var(--pm-border);
+}
+
+.proc-table th.num-col,
+.proc-table td.num-col {
+  text-align: right;
+}
+
+.proc-table th.status-col,
+.proc-table td.status-col {
+  text-align: center;
+}
+
+.proc-row {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition: all 0.15s ease;
 }
 
-.process-table tbody tr:hover {
-  background-color: #f8f9fa;
+.proc-row:hover {
+  background: var(--pm-card-hover);
 }
 
-.process-table tbody tr.selected {
-  background-color: #e7f3ff;
+.proc-row.selected {
+  background: rgba(56, 189, 248, 0.08);
+  border-left: 3px solid var(--pm-accent-cyan);
 }
 
-.process-table td {
-  padding: 12px 8px;
+.proc-table td {
+  padding: 0.75rem 1rem;
+  vertical-align: middle;
 }
 
-.process-name {
-  font-weight: 500;
-  color: #333;
+.proc-name-cell {
+  max-width: 200px;
 }
 
-.metric-cell {
+.proc-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.proc-app-icon {
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.proc-name-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  color: var(--pm-text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pid-text {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--pm-text-sub);
+  font-size: 0.8rem;
+}
+
+/* Micro Metric Meters inside cells */
+.proc-metric-meter {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0.25rem;
+  min-width: 100px;
 }
 
-.metric-cell span {
-  font-weight: 500;
+.proc-metric-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-family: 'JetBrains Mono', monospace;
 }
 
-.progress-bar {
+.proc-metric-val {
+  font-weight: 600;
+  color: var(--pm-text-main);
+}
+
+.proc-metric-val.high-cpu {
+  color: var(--pm-accent-amber);
+}
+
+.proc-metric-val.high-mem {
+  color: var(--pm-accent-purple);
+}
+
+.proc-metric-val .unit {
+  font-size: 0.7rem;
+  color: var(--pm-text-muted);
+}
+
+.proc-bar-track {
   width: 100%;
-  height: 6px;
-  background-color: #e9ecef;
-  border-radius: 3px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
   overflow: hidden;
 }
 
-.progress-fill {
+.proc-bar-fill {
   height: 100%;
-  border-radius: 3px;
-  transition: width 0.3s ease;
+  border-radius: 2px;
+  transition: width 0.4s ease;
 }
 
-.progress-fill.cpu {
-  background: linear-gradient(90deg, #4bc0c0, #36a2a2);
+.proc-bar-fill.cpu {
+  background: var(--pm-accent-cyan);
 }
 
-.progress-fill.memory {
-  background: linear-gradient(90deg, #ff6384, #cc4f6a);
+.proc-bar-fill.cpu.warn {
+  background: var(--pm-accent-amber);
 }
 
-.status-badge {
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
-  text-transform: capitalize;
+.proc-bar-fill.cpu.critical {
+  background: var(--pm-accent-rose);
 }
 
-.status-badge.running {
-  background-color: #d4edda;
-  color: #155724;
+.proc-bar-fill.memory {
+  background: var(--pm-accent-purple);
 }
 
-.status-badge.sleeping {
-  background-color: #d1ecf1;
-  color: #0c5460;
+.proc-bar-fill.memory.warn {
+  background: #a855f7;
 }
 
-.status-badge.stopped {
-  background-color: #f8d7da;
-  color: #721c24;
+.proc-bar-fill.memory.critical {
+  background: var(--pm-accent-rose);
 }
 
-.chart-container {
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  padding: 20px;
-  height: 500px;
+/* Status Pill */
+.proc-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.55rem;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--pm-text-sub);
 }
 
-.no-selection {
+.proc-status-pill .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.proc-status-pill.running {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--pm-accent-emerald);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.proc-status-pill.sleeping {
+  background: rgba(148, 163, 184, 0.1);
+  color: #94a3b8;
+}
+
+.proc-status-pill.stopped {
+  background: rgba(244, 63, 94, 0.1);
+  color: var(--pm-accent-rose);
+}
+
+.proc-empty-state {
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: var(--pm-text-muted);
+  font-size: 0.88rem;
+}
+
+/* ── Chart Container & Process Inspector Styling ──────────────────────────── */
+.proc-chart-card {
+  min-height: 580px;
   display: flex;
+  flex-direction: column;
+}
+
+.proc-chart-wrapper {
+  flex: 1;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.proc-inspector-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.proc-info-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+}
+
+@media (max-width: 1300px) {
+  .proc-info-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.proc-stat-box {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--pm-border);
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.proc-stat-box .stat-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--pm-text-muted);
+}
+
+.proc-stat-box .stat-val {
+  font-size: 1.25rem;
+  font-weight: 800;
+  font-family: 'JetBrains Mono', monospace;
+  line-height: 1.1;
+}
+
+.proc-stat-box .stat-val.cpu-color { color: var(--pm-accent-cyan); }
+.proc-stat-box .stat-val.mem-color { color: var(--pm-accent-purple); }
+.proc-stat-box .stat-val.status-color { color: var(--pm-accent-emerald); text-transform: uppercase; font-size: 1rem; }
+.proc-stat-box .stat-val.samples-color { color: var(--pm-text-sub); }
+
+.proc-stat-box .stat-unit {
+  font-size: 0.75rem;
+  color: var(--pm-text-muted);
+  font-weight: 500;
+}
+
+.chart-inner-wrap {
+  width: 100%;
+  height: 400px;
+  position: relative;
+  flex: 1;
+}
+
+.proc-chart-loading,
+.proc-no-chart-data {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  color: #999;
-  font-size: 16px;
+  gap: 0.75rem;
+  color: var(--pm-text-muted);
+  font-size: 0.85rem;
 }
 
-.no-data {
+.proc-no-selection-state {
   text-align: center;
-  padding: 40px 20px;
-  color: #999;
-  font-size: 14px;
+  max-width: 320px;
+  margin: auto;
+  padding: 3rem 1rem;
 }
 
-.loading,
-.error {
-  text-align: center;
-  padding: 40px 20px;
-  font-size: 16px;
+.proc-inspect-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.75rem;
+  opacity: 0.8;
 }
 
-.error {
-  color: #dc3545;
+.proc-no-selection-state h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+  color: var(--pm-text-main);
+}
+
+.proc-no-selection-state p {
+  font-size: 0.85rem;
+  color: var(--pm-text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ── Loading and Error States ────────────────────────────────────────────── */
+.proc-state-box {
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  color: var(--pm-text-sub);
+  font-size: 0.95rem;
+}
+
+.proc-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(56, 189, 248, 0.15);
+  border-top-color: var(--pm-accent-cyan);
+  border-radius: 50%;
+  animation: procSpin 0.8s linear infinite;
+}
+
+@keyframes procSpin {
+  to { transform: rotate(360deg); }
+}
+
+.proc-error-box {
+  color: var(--pm-accent-rose);
+}
+
+.proc-error-icon {
+  font-size: 2rem;
 }

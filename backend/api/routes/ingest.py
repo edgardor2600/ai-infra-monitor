@@ -91,25 +91,46 @@ async def ingest_metrics(batch: IngestBatch):
         row_id = cursor.fetchone()[0]
         
         # Insert process metrics if present
+        # Two sources: typed ProcessSample list OR raw processes from payload JSONB
         processes_count = 0
+        raw_processes = []
+
         if batch.processes:
-            for process in batch.processes:
+            # Typed structured list (preferred)
+            raw_processes = [
+                {
+                    "name":        p.name,
+                    "pid":         p.pid,
+                    "cpu_percent": p.cpu_percent,
+                    "memory_mb":   p.memory_mb,
+                    "status":      p.status,
+                }
+                for p in batch.processes
+            ]
+        elif payload.get("processes"):
+            # Fallback: processes sent inside the JSONB payload dict
+            raw_processes = payload["processes"]
+
+        for proc in raw_processes:
+            try:
                 cursor.execute(
                     """
-                    INSERT INTO process_metrics 
+                    INSERT INTO process_metrics
                     (host_id, process_name, pid, cpu_percent, memory_mb, status, created_at)
                     VALUES (%s, %s, %s, %s, %s, %s, NOW())
                     """,
                     (
                         batch.host_id,
-                        process.name,
-                        process.pid,
-                        process.cpu_percent,
-                        process.memory_mb,
-                        process.status
-                    )
+                        proc.get("name", "unknown"),
+                        proc.get("pid", 0),
+                        proc.get("cpu_percent", 0.0),
+                        proc.get("memory_mb", 0.0),
+                        proc.get("status", "running"),
+                    ),
                 )
-            processes_count = len(batch.processes)
+                processes_count += 1
+            except Exception as pe:
+                logger.warning(f"Failed to insert process {proc.get('name')}: {pe}")
         
         conn.commit()
         cursor.close()
