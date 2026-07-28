@@ -10,20 +10,20 @@
   line-height: 1.6;
   font-weight: 400;
   
-  /* Color palette */
-  --primary-color: #007bff;
-  --primary-hover: #0056b3;
-  --secondary-color: #6c757d;
-  --success-color: #28a745;
-  --danger-color: #dc3545;
-  --warning-color: #ffc107;
-  --info-color: #17a2b8;
+  /* Color palette - Dark Telemetry Design System */
+  --primary-color: #38bdf8;
+  --primary-hover: #0284c7;
+  --secondary-color: #94a3b8;
+  --success-color: #10b981;
+  --danger-color: #f43f5e;
+  --warning-color: #fbbf24;
+  --info-color: #6366f1;
   
-  --bg-color: #f8f9fa;
-  --surface-color: #ffffff;
-  --text-primary: #212529;
-  --text-secondary: #6c757d;
-  --border-color: #dee2e6;
+  --bg-color: #080c14;
+  --surface-color: #0f172a;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --border-color: rgba(255, 255, 255, 0.08);
   
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -31,17 +31,20 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-body {
+html, body {
   margin: 0;
+  padding: 0;
   min-height: 100vh;
-  background: var(--bg-color);
+  background-color: var(--bg-color);
   color: var(--text-primary);
+  overflow-x: hidden;
 }
 
 #root {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  background-color: var(--bg-color);
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -72,21 +75,21 @@ a:hover {
   color: var(--primary-hover);
 }
 
-/* Scrollbar styling */
+/* Dark Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: #080c14;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #888;
+  background: #1e293b;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: #334155;
 }

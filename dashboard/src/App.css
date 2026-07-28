@@ -1,22 +1,27 @@
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* AI Infra Monitor — Global Dark Layout & Unified Navigation Bar             */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
 .app {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--bg-color);
+  background: #080c14;
 }
 
-/* Navbar */
+/* ── Unified Glassmorphic Navbar ─────────────────────────────────────────── */
 .navbar {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: rgba(13, 21, 38, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   position: sticky;
   top: 0;
   z-index: 1000;
 }
 
 .nav-container {
-  max-width: 100%;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 0 2rem;
   display: flex;
@@ -25,94 +30,170 @@
   height: 64px;
 }
 
+/* Brand Logo */
 .nav-brand {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: white;
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   text-decoration: none;
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  background: linear-gradient(135deg, #38bdf8 0%, #a855f7 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
   transition: transform 0.2s ease;
 }
 
 .nav-brand:hover {
-  transform: scale(1.05);
-  color: white;
+  transform: scale(1.03);
 }
 
-.nav-brand::before {
-  content: '📊';
-  font-size: 1.75rem;
+.nav-brand-icon {
+  font-size: 1.3rem;
+  background: none;
+  -webkit-text-fill-color: initial;
 }
 
+/* Navigation Links */
 .nav-links {
   display: flex;
+  align-items: center;
   gap: 0.5rem;
 }
 
 .nav-link {
-  color: rgba(255, 255, 255, 0.9);
+  color: #94a3b8;
   text-decoration: none;
-  padding: 0.5rem 1.25rem;
-  border-radius: 6px;
-  font-weight: 500;
+  padding: 0.5rem 0.9rem;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
   transition: all 0.2s ease;
-  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .nav-link:hover {
-  color: white;
-  background: rgba(255, 255, 255, 0.15);
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.nav-link.active {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+  font-weight: 600;
+}
+
+.nav-link-superadmin {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24 !important;
+  font-weight: 700;
+}
+
+.nav-link-superadmin.active {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.3) 0%, rgba(236, 72, 153, 0.3) 100%);
+  border-color: #f59e0b;
+  color: #ffffff !important;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.3);
+}
+
+/* Special Cyber Badge for Disk Analyzer AI */
+.nav-link-disk-analyzer {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(147, 51, 234, 0.2) 100%);
+  border: 1px solid rgba(147, 51, 234, 0.4);
+  color: #c084fc !important;
+  font-weight: 700;
+  box-shadow: 0 0 12px rgba(147, 51, 234, 0.15);
+}
+
+.nav-link-disk-analyzer:hover {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.35) 0%, rgba(147, 51, 234, 0.35) 100%) !important;
+  border-color: rgba(147, 51, 234, 0.6);
+  box-shadow: 0 0 16px rgba(147, 51, 234, 0.3);
   transform: translateY(-1px);
 }
 
-.nav-link::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  width: 0;
-  height: 2px;
-  background: white;
-  transition: all 0.3s ease;
-  transform: translateX(-50%);
+/* User Identity Section */
+.nav-user-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.35rem 0.85rem;
+  border-radius: 20px;
+  font-size: 0.82rem;
+  margin-left: 0.5rem;
 }
 
-.nav-link:hover::after {
-  width: 80%;
+.user-email-text {
+  font-weight: 700;
+  color: #f8fafc;
+  font-family: 'JetBrains Mono', monospace;
 }
 
-/* Main Content */
+.user-tier-badge {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  padding: 0.1rem 0.45rem;
+  border-radius: 12px;
+  letter-spacing: 0.03em;
+}
+
+.user-org-name {
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.nav-logout-btn {
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+  color: #f43f5e;
+  padding: 0.25rem 0.65rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.nav-logout-btn:hover {
+  background: rgba(244, 63, 94, 0.22);
+  border-color: rgba(244, 63, 94, 0.5);
+  transform: translateY(-1px);
+}
+
+/* ── Main Content Container ──────────────────────────────────────────────── */
 .main-content {
   flex: 1;
   width: 100%;
-  padding: 2rem;
+  padding: 0;
   max-width: 100%;
-  margin: 0 auto;
+  margin: 0;
+  background: #080c14;
 }
 
 /* Responsive */
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .nav-container {
     padding: 0 1rem;
-    height: 56px;
+    height: 58px;
   }
   
   .nav-brand {
-    font-size: 1.25rem;
+    font-size: 1.1rem;
   }
   
-  .nav-links {
-    gap: 0.25rem;
-  }
-  
-  .nav-link {
-    padding: 0.4rem 0.75rem;
-    font-size: 0.9rem;
-  }
-  
-  .main-content {
-    padding: 1rem;
+  .user-org-name {
+    display: none;
   }
 }

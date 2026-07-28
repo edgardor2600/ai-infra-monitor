@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://127.0.0.1:8000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api/v1';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -8,6 +8,17 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('saas_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
 export const getHosts = async () => {
   const response = await api.get('/hosts');
@@ -121,6 +132,66 @@ export const listDiskCleanups = async (limit = 10) => {
 
 export const rollbackDiskCleanup = async (operationId) => {
   const response = await api.post('/disk-analyzer/rollback', { operation_id: operationId });
+  return response.data;
+};
+
+// Super Admin Management API
+export const getAdminUsers = async () => {
+  const response = await api.get('/auth/admin/users');
+  return response.data;
+};
+
+export const getAdminStats = async () => {
+  const response = await api.get('/auth/admin/stats');
+  return response.data;
+};
+
+export const changeUserTier = async (orgId, licenseTier) => {
+  const response = await api.post('/auth/admin/change-tier', {
+    org_id: orgId,
+    license_tier: licenseTier
+  });
+  return response.data;
+};
+
+export const changeUserRole = async (userId, role) => {
+  const response = await api.post('/auth/admin/change-role', {
+    user_id: userId,
+    role
+  });
+  return response.data;
+};
+
+export const resetUserPassword = async (userId, newPassword) => {
+  const response = await api.post('/auth/admin/reset-password', {
+    user_id: userId,
+    new_password: newPassword
+  });
+  return response.data;
+};
+
+export const deleteUserAccount = async (userId) => {
+  const response = await api.delete(`/auth/admin/users/${userId}`);
+  return response.data;
+};
+
+export const getNotificationSettings = async () => {
+  const response = await api.get('/auth/notification-settings');
+  return response.data;
+};
+
+export const updateNotificationSettings = async (settings) => {
+  const response = await api.post('/auth/notification-settings', settings);
+  return response.data;
+};
+
+export const testWebhook = async (webhookUrl) => {
+  const response = await api.post('/auth/test-webhook', { webhook_url: webhookUrl });
+  return response.data;
+};
+
+export const exportScanPdf = async (scanId) => {
+  const response = await api.post('/disk-analyzer/export-pdf', { scan_id: scanId, format: 'pdf' }, { responseType: 'blob' });
   return response.data;
 };
 
