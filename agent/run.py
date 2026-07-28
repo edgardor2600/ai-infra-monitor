@@ -47,15 +47,13 @@ async def auto_register_host(backend_url: str) -> int:
                     logger.info(f"Host '{hostname}' already registered with ID: {host_id}")
                     return host_id
             
-            # Host not found, need to register it
-            # Since we don't have a registration endpoint, we'll use host_id=1 as fallback
-            # and log a warning
-            logger.warning(
-                f"Host '{hostname}' not found in backend. "
-                f"Please run: python backend/scripts/register_host.py"
-            )
-            logger.warning("Using default host_id=1 for now")
-            return 1
+            # Host not found, register it automatically
+            reg_resp = await client.post(f"{backend_url}/api/v1/hosts/register", json={"hostname": hostname})
+            reg_resp.raise_for_status()
+            reg_data = reg_resp.json()
+            new_id = reg_data.get("id", 1)
+            logger.info(f"Host '{hostname}' successfully registered with ID: {new_id}")
+            return new_id
             
         except Exception as e:
             logger.error(f"Error during auto-registration: {e}")

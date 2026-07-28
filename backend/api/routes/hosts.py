@@ -72,3 +72,30 @@ async def get_hosts(authorization: Optional[str] = Header(None)) -> Dict[str, An
     finally:
         cursor.close()
         conn.close()
+
+
+@router.post("/hosts/register")
+async def register_host(payload: Dict[str, Any]):
+    """Auto-register host by hostname when agent connects."""
+    hostname = payload.get("hostname")
+    if not hostname:
+        raise HTTPException(status_code=400, detail="Hostname required")
+    
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cursor.execute(
+            """
+            INSERT INTO hosts (hostname, org_id)
+            VALUES (%s, 1)
+            ON CONFLICT (hostname) DO UPDATE SET hostname = EXCLUDED.hostname
+            RETURNING id, hostname;
+            """,
+            (hostname,)
+        )
+        row = cursor.fetchone()
+        conn.commit()
+        return {"id": row['id'], "hostname": row['hostname']}
+    finally:
+        cursor.close()
+        conn.close()

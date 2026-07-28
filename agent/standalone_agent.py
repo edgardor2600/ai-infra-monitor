@@ -144,8 +144,19 @@ def auto_register_host():
             for host in data.get("hosts", []):
                 if host.get("hostname") == hostname:
                     return host.get("id")
+        
+        # Register via POST if not found
+        reg_payload = json.dumps({"hostname": hostname}).encode('utf-8')
+        reg_req = urllib.request.Request(
+            f"{BACKEND_URL}/api/v1/hosts/register",
+            data=reg_payload,
+            headers={'Content-Type': 'application/json'}
+        )
+        with urllib.request.urlopen(reg_req, timeout=10) as reg_resp:
+            reg_data = json.loads(reg_resp.read().decode('utf-8'))
+            return reg_data.get("id", 1)
     except Exception as e:
-        logger.warning(f"Could not auto-fetch host_id: {e}")
+        logger.warning(f"Could not auto-fetch or register host_id: {e}")
     return 1
 
 
