@@ -3,6 +3,7 @@ Authentication & Multi-Tenant User Management Routes for Pro SaaS Edition.
 Uses PBKDF2 password hashing and signed JWT Access Tokens.
 """
 
+from backend.api.routes.dashboard import get_current_org_id
 import os
 import json
 import base64
