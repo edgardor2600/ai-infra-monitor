@@ -55,14 +55,28 @@ class DiskScanner:
                     continue
                 try:
                     usage = shutil.disk_usage(part.mountpoint)
+                    clean_device = part.device.rstrip("\\").rstrip("/")
+                    if clean_device and not clean_device.endswith(":"):
+                        clean_device += ":"
+                    if not clean_device:
+                        clean_device = part.mountpoint.rstrip("\\").rstrip("/")
+                        if not clean_device.endswith(":"):
+                            clean_device += ":"
+
+                    percent = round((usage.used / usage.total) * 100, 2)
                     drives.append({
-                        'device': part.device,
+                        'device': clean_device,
+                        'drive': clean_device,
                         'mountpoint': part.mountpoint,
                         'fstype': part.fstype,
                         'total': usage.total,
                         'used': usage.used,
                         'free': usage.free,
-                        'used_percent': round((usage.used / usage.total) * 100, 2)
+                        'free_bytes': usage.free,
+                        'total_bytes': usage.total,
+                        'used_bytes': usage.used,
+                        'used_percent': percent,
+                        'percent_used': percent
                     })
                 except (PermissionError, OSError):
                     continue
@@ -71,14 +85,20 @@ class DiskScanner:
             # Fallback to C:
             try:
                 usage = shutil.disk_usage("C:\\")
+                percent = round((usage.used / usage.total) * 100, 2)
                 drives.append({
                     'device': 'C:',
+                    'drive': 'C:',
                     'mountpoint': 'C:\\',
                     'fstype': 'NTFS',
                     'total': usage.total,
                     'used': usage.used,
                     'free': usage.free,
-                    'used_percent': round((usage.used / usage.total) * 100, 2)
+                    'free_bytes': usage.free,
+                    'total_bytes': usage.total,
+                    'used_bytes': usage.used,
+                    'used_percent': percent,
+                    'percent_used': percent
                 })
             except Exception:
                 pass
@@ -124,12 +144,14 @@ class DiskScanner:
         """Get disk space information for target drive"""
         try:
             total, used, free = shutil.disk_usage(self.drive_root)
+            percent = round((used / total) * 100, 2)
             return {
                 'drive': self.drive,
                 'total': total,
                 'used': used,
                 'free': free,
-                'used_percent': round((used / total) * 100, 2)
+                'used_percent': percent,
+                'percent_used': percent
             }
         except Exception as e:
             logger.error(f"Error getting disk info for {self.drive_root}: {e}")
@@ -138,7 +160,8 @@ class DiskScanner:
                 'total': 0,
                 'used': 0,
                 'free': 0,
-                'used_percent': 0
+                'used_percent': 0,
+                'percent_used': 0
             }
 
     def _scan_category(self, category) -> Dict:

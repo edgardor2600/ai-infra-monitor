@@ -93,6 +93,17 @@ class ActivateLicenseRequest(BaseModel):
     license_key: str = Field(..., description="License Key string to validate and activate")
 
 
+class CreateScheduledCleanupRequest(BaseModel):
+    """Request to create or update an automated scheduled maintenance job."""
+    host_id: int = Field(..., description="ID of the target host")
+    interval_hours: int = Field(default=24, description="Schedule interval in hours (default 24)")
+    categories: List[str] = Field(
+        default=["temp_files", "browser_cache", "recycle_bin"],
+        description="Zero-risk categories for automatic maintenance"
+    )
+    enabled: bool = Field(default=True, description="Whether schedule is active")
+
+
 
 class ScanListResponse(BaseModel):
     """Response listing all scans"""

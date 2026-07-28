@@ -1,9 +1,124 @@
-import React, { useState, useEffect } from 'react';
-import api, { inspectBackup } from '../api';
+import React, { useState, useEffect, useRef } from 'react';
+import api, { inspectBackup, exportScanPdf, getNotificationSettings, updateNotificationSettings } from '../api';
+import { useAuth } from '../context/AuthContext';
 import DiskTreemap from '../components/DiskTreemap';
 import './DiskAnalyzer.css';
 
+const FolderSelectorUI = ({ currentPath, onPathChange, placeholder }) => {
+  const fileInputRef = useRef(null);
+
+  const handleNativeFolderPick = (e) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const firstFile = files[0];
+      const fullPath = firstFile.path;
+      if (fullPath) {
+        const lastSlashIndex = Math.max(fullPath.lastIndexOf('\\'), fullPath.lastIndexOf('/'));
+        if (lastSlashIndex > 0) {
+          onPathChange(fullPath.substring(0, lastSlashIndex));
+          return;
+        }
+      }
+      if (firstFile.webkitRelativePath) {
+        const rootFolder = firstFile.webkitRelativePath.split('/')[0];
+        if (rootFolder) {
+          onPathChange(`C:\\Users\\EDGARDO\\${rootFolder}`);
+        }
+      }
+    }
+  };
+
+  const presets = [
+    { label: '📁 Documentos', path: 'C:\\Users\\EDGARDO\\Documents' },
+    { label: '📥 Descargas', path: 'C:\\Users\\EDGARDO\\Downloads' },
+    { label: '🖼️ Imágenes', path: 'C:\\Users\\EDGARDO\\Pictures' },
+    { label: '🎥 Videos', path: 'C:\\Users\\EDGARDO\\Videos' },
+    { label: '💻 Escritorio', path: 'C:\\Users\\EDGARDO\\Desktop' },
+    { label: '💿 Disco C:', path: 'C:\\' },
+  ];
+
+  return (
+    <div style={{ marginBottom: '1.25rem' }}>
+      <input
+        type="file"
+        webkitdirectory="true"
+        directory="true"
+        ref={fileInputRef}
+        onChange={handleNativeFolderPick}
+        style={{ display: 'none' }}
+      />
+      <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '0.6rem' }}>
+        <input
+          type="text"
+          className="form-input"
+          style={{
+            flexGrow: 1,
+            padding: '0.75rem 1rem',
+            borderRadius: '8px',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
+            background: '#0f172a',
+            color: '#f8fafc',
+            fontSize: '0.95rem',
+            fontFamily: 'monospace'
+          }}
+          value={currentPath}
+          onChange={(e) => onPathChange(e.target.value)}
+          placeholder={placeholder || "Selecciona o escribe la ruta de la carpeta..."}
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          style={{
+            padding: '0.75rem 1.25rem',
+            borderRadius: '8px',
+            background: 'linear-gradient(135deg, #0284c7 0%, #2563eb 100%)',
+            color: 'white',
+            border: 'none',
+            fontWeight: '700',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            boxShadow: '0 4px 12px rgba(2, 132, 199, 0.3)'
+          }}
+        >
+          📂 Explorar Carpeta
+        </button>
+      </div>
+
+      {/* Quick Preset Buttons */}
+      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: '600', marginRight: '0.2rem' }}>
+          ⚡ Accesos Rápidos:
+        </span>
+        {presets.map((preset, pIdx) => (
+          <button
+            key={`preset-${pIdx}`}
+            type="button"
+            onClick={() => onPathChange(preset.path)}
+            style={{
+              padding: '0.35rem 0.75rem',
+              borderRadius: '6px',
+              background: currentPath === preset.path ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+              border: currentPath === preset.path ? '1px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.1)',
+              color: currentPath === preset.path ? '#38bdf8' : '#cbd5e1',
+              fontSize: '0.82rem',
+              fontWeight: '600',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const DiskAnalyzer = () => {
+  const { user } = useAuth();
   const [drives, setDrives] = useState([]);
   const [selectedDrive, setSelectedDrive] = useState('C:');
   const [scans, setScans] = useState([]);
@@ -93,7 +208,17 @@ const DiskAnalyzer = () => {
   const fetchScans = async () => {
     try {
       const response = await api.get('/disk-analyzer/scans?limit=10');
-      setScans(response.data.scans || []);
+      const scanList = response.data.scans || [];
+      setScans(scanList);
+
+      // Auto-load most recent completed scan for current org on page load / reload
+      if (scanList.length > 0 && !currentScan) {
+        const latestScan = scanList.find(s => s.status === 'completed') || scanList[0];
+        const latestId = latestScan.scan_id || latestScan.id;
+        if (latestId) {
+          await fetchScanDetails(latestId);
+        }
+      }
     } catch (error) {
       console.error('Error fetching scans:', error);
     }
@@ -435,66 +560,91 @@ const DiskAnalyzer = () => {
   const renderDuplicatesTab = () => {
     const isAllowed = licenseInfo?.allowed_features?.includes('sha256_duplicates');
     return (
-      <div className="tab-pane card-container glass-card" style={{ background: 'white', padding: '1.5rem', borderRadius: '12px' }}>
+      <div className="tab-pane card-container glass-card" style={{ background: '#131e33', border: '1px solid rgba(255, 255, 255, 0.08)', padding: '1.5rem', borderRadius: '12px', color: '#f8fafc' }}>
         <h3>🔍 Buscador de Archivos Duplicados por Hash SHA-256</h3>
-        <p style={{ color: '#64748b' }}>Identifica archivos exactamente idénticos (mismo contenido byte a byte) para eliminar las copias redundantes reteniendo la versión maestro más reciente.</p>
+        <p style={{ color: '#94a3b8' }}>Identifica archivos exactamente idénticos (mismo contenido byte a byte) para eliminar las copias redundantes reteniendo la versión maestro más reciente.</p>
 
         {!isAllowed ? (
-          <div style={{ padding: '2rem', textAlign: 'center', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '12px', marginTop: '1.5rem' }}>
+          <div style={{ padding: '2rem', textAlign: 'center', background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.3)', borderRadius: '12px', marginTop: '1.5rem' }}>
             <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>🔒</div>
-            <h3 style={{ color: '#991b1b', margin: '0 0 0.5rem 0' }}>Función Exclusiva del Plan Pro SaaS o Enterprise B2B</h3>
-            <p style={{ color: '#7f1d1d', maxWidth: '600px', margin: '0 auto 1.5rem auto' }}>
+            <h3 style={{ color: '#f43f5e', margin: '0 0 0.5rem 0' }}>Función Exclusiva del Plan Pro SaaS o Enterprise B2B</h3>
+            <p style={{ color: '#fda4af', maxWidth: '600px', margin: '0 auto 1.5rem auto' }}>
               El <strong>Buscador por Hash SHA-256</strong> está bloqueado bajo tu nivel de suscripción actual (<strong>{licenseInfo?.license_tier || 'STARTER'}</strong>). Para utilizar la detección exacta byte a byte, activa una licencia comercial.
             </p>
             <button
               className="btn-primary"
               onClick={() => setActiveTab('license')}
-              style={{ padding: '0.75rem 1.5rem', borderRadius: '8px', background: '#dc2626', color: 'white', border: 'none', fontWeight: '700', cursor: 'pointer' }}
+              style={{ padding: '0.75rem 1.5rem', borderRadius: '8px', background: 'linear-gradient(135deg, #f43f5e 0%, #e11d48 100%)', color: 'white', border: 'none', fontWeight: '700', cursor: 'pointer' }}
             >
               🔑 Ir a Activar Licencia Comercial
             </button>
           </div>
         ) : (
           <div>
-            <div className="search-input-row" style={{ display: 'flex', gap: '1rem', marginTop: '1rem', marginBottom: '1.5rem' }}>
-              <input
-                type="text"
-                className="form-input"
-                style={{ flexGrow: 1, padding: '0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1' }}
-                value={dupScanPath}
-                onChange={(e) => setDupScanPath(e.target.value)}
-                placeholder="Ruta del directorio a analizar (Ej. C:\Users\EDGARDO\Documents)"
+            <div style={{ marginTop: '1rem', marginBottom: '1.5rem' }}>
+              <FolderSelectorUI
+                currentPath={dupScanPath}
+                onPathChange={setDupScanPath}
+                placeholder="Selecciona o escribe la carpeta a analizar por SHA-256..."
               />
               <button
                 className="btn-primary"
                 onClick={runDuplicateScan}
                 disabled={dupLoading}
-                style={{ padding: '0.75rem 1.5rem', borderRadius: '8px', background: '#3b82f6', color: 'white', border: 'none', fontWeight: '600', cursor: 'pointer' }}
+                style={{
+                  width: '100%',
+                  padding: '0.85rem',
+                  borderRadius: '8px',
+                  background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+                  color: 'white',
+                  border: 'none',
+                  fontWeight: '700',
+                  fontSize: '1rem',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(37, 99, 235, 0.35)'
+                }}
               >
-                {dupLoading ? 'Escaneando Hashes SHA-256...' : '🔍 Buscar Duplicados'}
+                {dupLoading ? 'Escaneando Hashes SHA-256...' : '🔍 Iniciar Búsqueda de Duplicados'}
               </button>
             </div>
 
             {dupResults && (
               <div className="dup-results">
-                <div className="dup-summary" style={{ background: '#eff6ff', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
-                  <strong>Resumen de Análisis por Hash:</strong> {dupResults.total_duplicate_files} archivos duplicados encontrados, desperdiciando <strong>{formatBytes(dupResults.total_wasted_bytes)}</strong> en disco.
+                <div className="dup-summary" style={{ background: '#1e293b', border: '1px solid rgba(56, 189, 248, 0.3)', padding: '1.25rem', borderRadius: '10px', marginBottom: '1.25rem', color: '#f8fafc' }}>
+                  <div style={{ fontSize: '1.05rem', fontWeight: '700', color: '#38bdf8', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    ⚡ Resumen de Deduplicación SHA-256
+                  </div>
+                  <div style={{ color: '#cbd5e1', fontSize: '0.95rem' }}>
+                    Se encontraron <strong>{dupResults.total_duplicate_files} archivos idénticos</strong> redundantes, desperdiciando un total de <strong style={{ color: '#f43f5e' }}>{formatBytes(dupResults.total_wasted_bytes)}</strong> en disco.
+                  </div>
                 </div>
 
-                {dupResults.duplicate_sets?.map((dupSet, idx) => (
-                  <div key={`dup-set-${idx}`} className="dup-set-card" style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
-                    <div style={{ fontWeight: '600', marginBottom: '0.5rem', color: '#1e293b' }}>
-                      Grupo #{idx + 1} - SHA-256: <code>{dupSet.sha256_hash?.substring(0, 16)}...</code> ({formatBytes(dupSet.file_size_bytes)} cada uno)
+                {dupResults.duplicate_sets?.map((dupSet, idx) => {
+                  const hashStr = dupSet.sha256_hash || dupSet.sha256 || 'HASH';
+                  const fileList = dupSet.files || (
+                    dupSet.original_path
+                      ? [{ path: dupSet.original_path, is_original: true }, ...(dupSet.duplicate_paths || []).map(p => ({ path: p, is_original: false }))]
+                      : []
+                  );
+                  return (
+                    <div key={`dup-set-${idx}`} className="dup-set-card" style={{ border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '8px', padding: '1rem', marginBottom: '1rem', background: '#1e293b' }}>
+                      <div style={{ fontWeight: '600', marginBottom: '0.5rem', color: '#f8fafc' }}>
+                        Grupo #{idx + 1} — SHA-256: <code>{hashStr.substring(0, 16)}...</code> ({formatBytes(dupSet.file_size_bytes)} c/u)
+                      </div>
+                      <ul style={{ paddingLeft: '1.25rem', margin: 0 }}>
+                        {fileList.map((fileItem, fIdx) => {
+                          const filePath = typeof fileItem === 'string' ? fileItem : fileItem?.path;
+                          const isOriginal = fIdx === 0 || fileItem?.is_original;
+                          return (
+                            <li key={`dup-file-${fIdx}-${filePath}`} style={{ fontSize: '0.9rem', color: isOriginal ? '#4ade80' : '#cbd5e1', fontWeight: isOriginal ? '700' : '400', marginBottom: '0.25rem' }}>
+                              {isOriginal ? '⭐ [RETENER MAESTRO]: ' : '🗑️ [COPIA A BORRAR]: '}{filePath}
+                            </li>
+                          );
+                        })}
+                      </ul>
                     </div>
-                    <ul style={{ paddingLeft: '1.25rem', margin: 0 }}>
-                      {dupSet.files.map((fileItem, fIdx) => (
-                        <li key={`dup-file-${fIdx}-${fileItem.path}`} style={{ fontSize: '0.9rem', color: fIdx === 0 ? '#15803d' : '#334155', fontWeight: fIdx === 0 ? '700' : '400', marginBottom: '0.25rem' }}>
-                          {fIdx === 0 ? '⭐ [RETENER MAESTRO]: ' : '🗑️ [COPIA A BORRAR]: '}{fileItem.path}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -504,45 +654,54 @@ const DiskAnalyzer = () => {
   };
 
   const renderDevArtifactsTab = () => {
-    const isAllowed = licenseInfo?.allowed_features?.includes('dev_cleaner');
+    const effectiveTier = (user?.license_tier || licenseInfo?.license_tier || 'PRO_SAAS').toUpperCase();
+    const isAllowed = effectiveTier !== 'STARTER' || licenseInfo?.allowed_features?.includes('dev_cleaner');
     return (
-      <div className="tab-pane card-container glass-card" style={{ background: 'white', padding: '1.5rem', borderRadius: '12px' }}>
+      <div className="tab-pane card-container glass-card" style={{ background: '#131e33', border: '1px solid rgba(255, 255, 255, 0.08)', padding: '1.5rem', borderRadius: '12px', color: '#f8fafc' }}>
         <h3>💻 Limpiador Especializado Developer & Multimedia</h3>
-        <p style={{ color: '#64748b' }}>Detecta carpetas de compilación pesadas (<code>node_modules</code>, <code>.venv</code>, <code>.next</code>, <code>dist</code>, <code>__pycache__</code>) y caché de renderizado de Adobe Premiere/Photoshop.</p>
+        <p style={{ color: '#94a3b8' }}>Detecta carpetas de compilación pesadas (<code>node_modules</code>, <code>.venv</code>, <code>.next</code>, <code>dist</code>, <code>__pycache__</code>) y caché de renderizado de Adobe Premiere/Photoshop.</p>
 
         {!isAllowed ? (
-          <div style={{ padding: '2rem', textAlign: 'center', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '12px', marginTop: '1.5rem' }}>
+          <div style={{ padding: '2rem', textAlign: 'center', background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.3)', borderRadius: '12px', marginTop: '1.5rem' }}>
             <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>🔒</div>
-            <h3 style={{ color: '#991b1b', margin: '0 0 0.5rem 0' }}>Función Exclusiva del Plan Pro SaaS o Enterprise B2B</h3>
-            <p style={{ color: '#7f1d1d', maxWidth: '600px', margin: '0 auto 1.5rem auto' }}>
+            <h3 style={{ color: '#f43f5e', margin: '0 0 0.5rem 0' }}>Función Exclusiva del Plan Pro SaaS o Enterprise B2B</h3>
+            <p style={{ color: '#fda4af', maxWidth: '600px', margin: '0 auto 1.5rem auto' }}>
               El <strong>Limpiador de Artefactos Dev & Media</strong> está bloqueado bajo tu nivel de suscripción actual (<strong>{licenseInfo?.license_tier || 'STARTER'}</strong>). Para utilizar la limpieza inteligente de node_modules y cachés, activa una licencia comercial.
             </p>
             <button
               className="btn-primary"
               onClick={() => setActiveTab('license')}
-              style={{ padding: '0.75rem 1.5rem', borderRadius: '8px', background: '#dc2626', color: 'white', border: 'none', fontWeight: '700', cursor: 'pointer' }}
+              style={{ padding: '0.75rem 1.5rem', borderRadius: '8px', background: 'linear-gradient(135deg, #f43f5e 0%, #e11d48 100%)', color: 'white', border: 'none', fontWeight: '700', cursor: 'pointer' }}
             >
               🔑 Ir a Activar Licencia Comercial
             </button>
           </div>
         ) : (
           <div>
-            <div className="search-input-row" style={{ display: 'flex', gap: '1rem', marginTop: '1rem', marginBottom: '1.5rem' }}>
-              <input
-                type="text"
-                className="form-input"
-                style={{ flexGrow: 1, padding: '0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1' }}
-                value={devScanPath}
-                onChange={(e) => setDevScanPath(e.target.value)}
-                placeholder="Ruta base de proyectos (Ej. C:\Users\EDGARDO\Documents)"
+            <div style={{ marginTop: '1rem', marginBottom: '1.5rem' }}>
+              <FolderSelectorUI
+                currentPath={devScanPath}
+                onPathChange={setDevScanPath}
+                placeholder="Selecciona o escribe la ruta base de proyectos..."
               />
               <button
                 className="btn-primary"
                 onClick={runDevArtifactsScan}
                 disabled={devLoading}
-                style={{ padding: '0.75rem 1.5rem', borderRadius: '8px', background: '#3b82f6', color: 'white', border: 'none', fontWeight: '600', cursor: 'pointer' }}
+                style={{
+                  width: '100%',
+                  padding: '0.85rem',
+                  borderRadius: '8px',
+                  background: 'linear-gradient(135deg, #0284c7 0%, #2563eb 100%)',
+                  color: 'white',
+                  border: 'none',
+                  fontWeight: '700',
+                  fontSize: '1rem',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(2, 132, 199, 0.35)'
+                }}
               >
-                {devLoading ? 'Escaneando Proyectos...' : '💻 Buscar Artefactos Dev'}
+                {devLoading ? 'Escaneando Proyectos...' : '💻 Iniciar Búsqueda de Artefactos Dev & Media'}
               </button>
             </div>
 
@@ -572,15 +731,15 @@ const DiskAnalyzer = () => {
   const renderAuditLogsTab = () => {
     const isAllowed = licenseInfo?.allowed_features?.includes('immutable_audit_logs');
     return (
-      <div className="tab-pane card-container glass-card" style={{ background: 'white', padding: '1.5rem', borderRadius: '12px' }}>
-        <h3>📜 Registro Inmutable de Auditoría Corporativa (B2B Compliance)</h3>
-        <p style={{ color: '#64748b' }}>Logs de trazabilidad inmutables para administradores de TI: registran qué usuario ejecutó la limpieza, cuántos MB/GB liberó, en qué host y la justificación de la IA.</p>
+      <div className="tab-pane card-container glass-card" style={{ background: '#131e33', border: '1px solid rgba(255, 255, 255, 0.08)', padding: '1.5rem', borderRadius: '12px', color: '#f8fafc' }}>
+        <h3 style={{ color: '#f8fafc' }}>📜 Registro Inmutable de Auditoría Corporativa (B2B Compliance)</h3>
+        <p style={{ color: '#94a3b8' }}>Logs de trazabilidad inmutables para administradores de TI: registran qué usuario ejecutó la limpieza, cuántos MB/GB liberó, en qué host y la justificación de la IA.</p>
 
         {!isAllowed ? (
-          <div style={{ padding: '2rem', textAlign: 'center', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '12px', marginTop: '1.5rem' }}>
+          <div style={{ padding: '2rem', textAlign: 'center', background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.3)', borderRadius: '12px', marginTop: '1.5rem' }}>
             <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>🔒</div>
-            <h3 style={{ color: '#991b1b', margin: '0 0 0.5rem 0' }}>Función Exclusiva del Plan Enterprise B2B</h3>
-            <p style={{ color: '#7f1d1d', maxWidth: '600px', margin: '0 auto 1.5rem auto' }}>
+            <h3 style={{ color: '#f43f5e', margin: '0 0 0.5rem 0' }}>Función Exclusiva del Plan Enterprise B2B</h3>
+            <p style={{ color: '#fda4af', maxWidth: '600px', margin: '0 auto 1.5rem auto' }}>
               El <strong>Registro Inmutable de Auditoría Corporativa</strong> es una característica exclusiva para cumplimiento normativo del plan <strong>Enterprise B2B</strong>. Tu plan actual es <strong>{licenseInfo?.license_tier || 'STARTER'}</strong>.
             </p>
             <button
@@ -594,31 +753,31 @@ const DiskAnalyzer = () => {
         ) : (
           <div>
             {auditLoading ? (
-              <p>Cargando registros de auditoría...</p>
+              <p style={{ color: '#94a3b8' }}>Cargando registros de auditoría...</p>
             ) : (
               <div className="audit-table-wrapper" style={{ overflowX: 'auto', marginTop: '1rem' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
                   <thead>
-                    <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
-                      <th style={{ padding: '0.75rem' }}>ID</th>
-                      <th style={{ padding: '0.75rem' }}>Empresa</th>
-                      <th style={{ padding: '0.75rem' }}>Host</th>
-                      <th style={{ padding: '0.75rem' }}>Categorías</th>
-                      <th style={{ padding: '0.75rem' }}>Espacio Liberado</th>
-                      <th style={{ padding: '0.75rem' }}>Proveedor IA</th>
-                      <th style={{ padding: '0.75rem' }}>Fecha</th>
+                    <tr style={{ background: '#0f172a', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                      <th style={{ padding: '0.75rem 1rem', color: '#64748b' }}>ID</th>
+                      <th style={{ padding: '0.75rem 1rem', color: '#64748b' }}>Empresa</th>
+                      <th style={{ padding: '0.75rem 1rem', color: '#64748b' }}>Host</th>
+                      <th style={{ padding: '0.75rem 1rem', color: '#64748b' }}>Categorías</th>
+                      <th style={{ padding: '0.75rem 1rem', color: '#64748b' }}>Espacio Liberado</th>
+                      <th style={{ padding: '0.75rem 1rem', color: '#64748b' }}>Proveedor IA</th>
+                      <th style={{ padding: '0.75rem 1rem', color: '#64748b' }}>Fecha</th>
                     </tr>
                   </thead>
                   <tbody>
                     {auditLogs.map((log) => (
-                      <tr key={`audit-log-${log.id}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                        <td style={{ padding: '0.75rem' }}>#{log.id}</td>
-                        <td style={{ padding: '0.75rem', fontWeight: '600' }}>{log.organization_name}</td>
-                        <td style={{ padding: '0.75rem' }}>{log.hostname}</td>
-                        <td style={{ padding: '0.75rem' }}>{Array.isArray(log.categories) ? log.categories.join(', ') : log.categories}</td>
-                        <td style={{ padding: '0.75rem', fontWeight: '600', color: '#059669' }}>{log.formatted_bytes_freed}</td>
-                        <td style={{ padding: '0.75rem' }}>🤖 {log.ai_provider}</td>
-                        <td style={{ padding: '0.75rem', color: '#64748b' }}>{new Date(log.executed_at).toLocaleString()}</td>
+                      <tr key={`audit-log-${log.id}`} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                        <td style={{ padding: '0.75rem 1rem', fontFamily: 'JetBrains Mono, monospace' }}>#{log.id}</td>
+                        <td style={{ padding: '0.75rem 1rem', fontWeight: '700', color: '#f8fafc' }}>{log.organization_name}</td>
+                        <td style={{ padding: '0.75rem 1rem', color: '#94a3b8' }}>{log.hostname}</td>
+                        <td style={{ padding: '0.75rem 1rem', color: '#cbd5e1' }}>{Array.isArray(log.categories) ? log.categories.join(', ') : log.categories}</td>
+                        <td style={{ padding: '0.75rem 1rem', fontWeight: '700', color: '#10b981', fontFamily: 'JetBrains Mono, monospace' }}>{log.formatted_bytes_freed}</td>
+                        <td style={{ padding: '0.75rem 1rem', color: '#38bdf8' }}>🤖 {log.ai_provider}</td>
+                        <td style={{ padding: '0.75rem 1rem', color: '#64748b', fontSize: '0.8rem' }}>{new Date(log.executed_at).toLocaleString()}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -633,15 +792,15 @@ const DiskAnalyzer = () => {
 
   const renderLicenseTab = () => {
     return (
-      <div className="tab-pane card-container glass-card" style={{ background: 'white', padding: '1.5rem', borderRadius: '12px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1rem' }}>
+      <div className="tab-pane card-container glass-card" style={{ background: '#131e33', border: '1px solid rgba(255, 255, 255, 0.08)', padding: '1.5rem', borderRadius: '12px', color: '#f8fafc' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '1rem' }}>
           <div>
-            <h3 style={{ margin: 0, color: '#0f172a' }}>💳 Gestión de Licencia & Planes B2B</h3>
-            <p style={{ margin: '0.25rem 0 0 0', color: '#64748b' }}>Estado del contrato corporativo, características habilitadas y activador de claves de licencia.</p>
+            <h3 style={{ margin: 0, color: '#f8fafc' }}>💳 Gestión de Licencia & Planes B2B</h3>
+            <p style={{ margin: '0.25rem 0 0 0', color: '#94a3b8' }}>Estado del contrato corporativo, características habilitadas y activador de claves de licencia.</p>
           </div>
           {licenseInfo && (
             <div style={{ textAlign: 'right' }}>
-              <span className="status-badge" style={{ background: '#dbeafe', color: '#1e40af', padding: '0.5rem 1rem', borderRadius: '20px', fontWeight: '700', fontSize: '0.9rem' }}>
+              <span className="status-badge" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', padding: '0.5rem 1rem', borderRadius: '20px', fontWeight: '700', fontSize: '0.85rem' }}>
                 NIVEL ACTIVO: {licenseInfo.license_tier}
               </span>
             </div>
@@ -650,33 +809,33 @@ const DiskAnalyzer = () => {
 
         {/* Current License Card */}
         {licenseInfo && (
-          <div style={{ background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', color: 'white', padding: '1.5rem', borderRadius: '12px', marginBottom: '2rem', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}>
+          <div style={{ background: '#0f172a', border: '1px solid rgba(255, 255, 255, 0.08)', color: 'white', padding: '1.5rem', borderRadius: '12px', marginBottom: '2rem', boxShadow: '0 10px 25px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem' }}>
               <div>
-                <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Organización Suscriptora:</div>
-                <div style={{ fontSize: '1.2rem', fontWeight: '700', marginTop: '0.25rem' }}>🏢 {licenseInfo.organization_name}</div>
+                <div style={{ color: '#64748b', fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: '600' }}>Organización Suscriptora:</div>
+                <div style={{ fontSize: '1.2rem', fontWeight: '700', marginTop: '0.25rem', color: '#f8fafc' }}>🏢 {licenseInfo.organization_name}</div>
               </div>
               <div>
-                <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Proveedor de IA Configurado:</div>
+                <div style={{ color: '#64748b', fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: '600' }}>Proveedor de IA Configurado:</div>
                 <div style={{ fontSize: '1.2rem', fontWeight: '700', marginTop: '0.25rem', color: '#38bdf8' }}>🤖 {licenseInfo.active_llm_provider}</div>
               </div>
               <div>
-                <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Límite de Hosts Monitoreados:</div>
-                <div style={{ fontSize: '1.2rem', fontWeight: '700', marginTop: '0.25rem', color: '#4ade80' }}>🖥️ Hasta {licenseInfo.max_hosts} equipos</div>
+                <div style={{ color: '#64748b', fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: '600' }}>Límite de Hosts Monitoreados:</div>
+                <div style={{ fontSize: '1.2rem', fontWeight: '700', marginTop: '0.25rem', color: '#10b981' }}>🖥️ Hasta {licenseInfo.max_hosts} equipos</div>
               </div>
             </div>
           </div>
         )}
 
         {/* License Key Activation Row */}
-        <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '1.25rem', borderRadius: '8px', marginBottom: '2rem' }}>
-          <h4 style={{ margin: '0 0 0.5rem 0', color: '#1e293b' }}>🔑 Activar Clave de Licencia B2B</h4>
-          <p style={{ margin: '0 0 1rem 0', fontSize: '0.85rem', color: '#64748b' }}>Ingresa tu código de licencia corporativa o clave promocional (Ej. <code>ENTERPRISE-KEY-2026</code> o <code>PRO-SAAS-KEY</code>).</p>
+        <div style={{ background: '#0f172a', border: '1px solid rgba(255, 255, 255, 0.08)', padding: '1.25rem', borderRadius: '10px', marginBottom: '2rem' }}>
+          <h4 style={{ margin: '0 0 0.5rem 0', color: '#f8fafc' }}>🔑 Activar Clave de Licencia B2B</h4>
+          <p style={{ margin: '0 0 1rem 0', fontSize: '0.85rem', color: '#94a3b8' }}>Ingresa tu código de licencia corporativa o clave promocional (Ej. <code>ENTERPRISE-KEY-2026</code> o <code>PRO-SAAS-KEY</code>).</p>
           <div style={{ display: 'flex', gap: '1rem' }}>
             <input
               type="text"
               className="form-input"
-              style={{ flexGrow: 1, padding: '0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1', textTransform: 'uppercase' }}
+              style={{ flexGrow: 1, padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.12)', background: '#131e33', color: '#f8fafc', textTransform: 'uppercase', fontFamily: 'JetBrains Mono, monospace' }}
               value={licenseKeyInput}
               onChange={(e) => setLicenseKeyInput(e.target.value)}
               placeholder="Ingresa clave de licencia B2B (Ej: ENTERPRISE-KEY-2026)"
@@ -685,7 +844,7 @@ const DiskAnalyzer = () => {
               className="btn-primary"
               onClick={handleActivateLicense}
               disabled={activatingLicense || !licenseKeyInput}
-              style={{ padding: '0.75rem 1.5rem', borderRadius: '8px', background: '#2563eb', color: 'white', border: 'none', fontWeight: '600', cursor: 'pointer' }}
+              style={{ padding: '0.75rem 1.5rem', borderRadius: '8px', background: 'linear-gradient(135deg, #38bdf8 0%, #0284c7 100%)', color: 'white', border: 'none', fontWeight: '700', cursor: 'pointer' }}
             >
               {activatingLicense ? 'Validando...' : '🔑 Activar Licencia'}
             </button>
@@ -693,14 +852,14 @@ const DiskAnalyzer = () => {
         </div>
 
         {/* Plans Comparison Grid */}
-        <h4 style={{ margin: '0 0 1rem 0', color: '#1e293b' }}>💎 Comparativa de Planes Comerciales</h4>
+        <h4 style={{ margin: '0 0 1rem 0', color: '#f8fafc' }}>💎 Comparativa de Planes Comerciales</h4>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
           {/* Starter Plan */}
-          <div style={{ border: '1px solid #cbd5e1', borderRadius: '12px', padding: '1.5rem', background: '#ffffff' }}>
-            <div style={{ fontSize: '1.2rem', fontWeight: '700', color: '#475569' }}>🥉 Starter / Gratuito</div>
-            <div style={{ fontSize: '1.5rem', fontWeight: '800', margin: '0.5rem 0', color: '#0f172a' }}>$0 <span style={{ fontSize: '0.85rem', fontWeight: '400', color: '#64748b' }}>/siempre</span></div>
-            <p style={{ fontSize: '0.85rem', color: '#64748b' }}>Para usuarios individuales que buscan un análisis de disco rápido manual.</p>
-            <ul style={{ paddingLeft: '1.25rem', fontSize: '0.85rem', color: '#334155', lineHeight: '1.8' }}>
+          <div style={{ border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '1.5rem', background: '#0f172a' }}>
+            <div style={{ fontSize: '1.1rem', fontWeight: '700', color: '#cbd5e1' }}>🥉 Starter / Gratuito</div>
+            <div style={{ fontSize: '1.6rem', fontWeight: '800', margin: '0.5rem 0', color: '#f8fafc', fontFamily: 'JetBrains Mono, monospace' }}>$0 <span style={{ fontSize: '0.85rem', fontWeight: '400', color: '#64748b' }}>/siempre</span></div>
+            <p style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Para usuarios individuales que buscan un análisis de disco rápido manual.</p>
+            <ul style={{ paddingLeft: '1.25rem', fontSize: '0.85rem', color: '#cbd5e1', lineHeight: '1.8' }}>
               <li>✓ Escaneo profundo de unidades local</li>
               <li>✓ Limpieza manual de archivos temporales</li>
               <li>❌ Buscador por Hash SHA-256</li>
@@ -710,12 +869,12 @@ const DiskAnalyzer = () => {
           </div>
 
           {/* Pro SaaS Plan */}
-          <div style={{ border: '2px solid #3b82f6', borderRadius: '12px', padding: '1.5rem', background: '#eff6ff', position: 'relative' }}>
-            <span style={{ position: 'absolute', top: '-12px', right: '20px', background: '#3b82f6', color: 'white', padding: '0.2rem 0.6rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700' }}>RECOMENDADO</span>
-            <div style={{ fontSize: '1.2rem', fontWeight: '700', color: '#1d4ed8' }}>🥈 Pro SaaS Edition</div>
-            <div style={{ fontSize: '1.5rem', fontWeight: '800', margin: '0.5rem 0', color: '#0f172a' }}>$29 <span style={{ fontSize: '0.85rem', fontWeight: '400', color: '#64748b' }}>/mes por equipo</span></div>
-            <p style={{ fontSize: '0.85rem', color: '#64748b' }}>Para profesionales, freelancers y desarrolladores de software.</p>
-            <ul style={{ paddingLeft: '1.25rem', fontSize: '0.85rem', color: '#1e3a8a', lineHeight: '1.8' }}>
+          <div style={{ border: '1px solid rgba(56, 189, 248, 0.4)', borderRadius: '12px', padding: '1.5rem', background: 'rgba(56, 189, 248, 0.06)', position: 'relative', boxShadow: '0 0 20px rgba(56, 189, 248, 0.1)' }}>
+            <span style={{ position: 'absolute', top: '-12px', right: '20px', background: '#38bdf8', color: '#080c14', padding: '0.2rem 0.6rem', borderRadius: '12px', fontSize: '0.72rem', fontWeight: '800', letterSpacing: '0.05em' }}>RECOMENDADO</span>
+            <div style={{ fontSize: '1.1rem', fontWeight: '700', color: '#38bdf8' }}>🥈 Pro SaaS Edition</div>
+            <div style={{ fontSize: '1.6rem', fontWeight: '800', margin: '0.5rem 0', color: '#f8fafc', fontFamily: 'JetBrains Mono, monospace' }}>$29 <span style={{ fontSize: '0.85rem', fontWeight: '400', color: '#94a3b8' }}>/mes por equipo</span></div>
+            <p style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Para profesionales, freelancers y desarrolladores de software.</p>
+            <ul style={{ paddingLeft: '1.25rem', fontSize: '0.85rem', color: '#7dd3fc', lineHeight: '1.8' }}>
               <li>✓ Todo lo del plan Starter</li>
               <li>✓ Buscador por Hash SHA-256 (Duplicados)</li>
               <li>✓ Limpiador Dev & Media (node_modules, Adobe)</li>
@@ -726,11 +885,11 @@ const DiskAnalyzer = () => {
           </div>
 
           {/* Enterprise B2B Plan */}
-          <div style={{ border: '1px solid #7c3aed', borderRadius: '12px', padding: '1.5rem', background: '#faf5ff' }}>
-            <div style={{ fontSize: '1.2rem', fontWeight: '700', color: '#6d28d9' }}>🥇 Enterprise B2B</div>
-            <div style={{ fontSize: '1.5rem', fontWeight: '800', margin: '0.5rem 0', color: '#0f172a' }}>Personalizado</div>
-            <p style={{ fontSize: '0.85rem', color: '#64748b' }}>Para empresas y departamentos de TI con cumplimiento normativo.</p>
-            <ul style={{ paddingLeft: '1.25rem', fontSize: '0.85rem', color: '#4c1d95', lineHeight: '1.8' }}>
+          <div style={{ border: '1px solid rgba(192, 132, 252, 0.4)', borderRadius: '12px', padding: '1.5rem', background: 'rgba(192, 132, 252, 0.06)', boxShadow: '0 0 20px rgba(192, 132, 252, 0.1)' }}>
+            <div style={{ fontSize: '1.1rem', fontWeight: '700', color: '#c084fc' }}>🥇 Enterprise B2B</div>
+            <div style={{ fontSize: '1.6rem', fontWeight: '800', margin: '0.5rem 0', color: '#f8fafc', fontFamily: 'JetBrains Mono, monospace' }}>Personalizado</div>
+            <p style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Para empresas y departamentos de TI con cumplimiento normativo.</p>
+            <ul style={{ paddingLeft: '1.25rem', fontSize: '0.85rem', color: '#e9d5ff', lineHeight: '1.8' }}>
               <li>✓ Todo lo del plan Pro SaaS</li>
               <li>✓ Registro Inmutable de Auditoría B2B Compliance</li>
               <li>✓ Multi-tenant para cientos de organizaciones</li>
@@ -758,25 +917,52 @@ const DiskAnalyzer = () => {
       )}
 
       {/* Phase 4 SaaS Tabs Navigation */}
-      <div className="saas-nav-tabs" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '2px solid #e2e8f0', paddingBottom: '0.5rem' }}>
+      <div className="saas-nav-tabs" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '0.5rem', flexWrap: 'wrap' }}>
         <button
           className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
           onClick={() => setActiveTab('overview')}
-          style={{ padding: '0.75rem 1.25rem', border: 'none', borderRadius: '8px 8px 0 0', fontWeight: '600', cursor: 'pointer', background: activeTab === 'overview' ? '#3b82f6' : '#f1f5f9', color: activeTab === 'overview' ? 'white' : '#475569' }}
+          style={{
+            padding: '0.65rem 1.25rem',
+            border: activeTab === 'overview' ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: '8px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            background: activeTab === 'overview' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+            color: activeTab === 'overview' ? '#38bdf8' : '#94a3b8',
+            transition: 'all 0.2s ease'
+          }}
         >
           📊 Visión General & Limpieza
         </button>
         <button
           className={`tab-btn ${activeTab === 'duplicates' ? 'active' : ''}`}
           onClick={() => setActiveTab('duplicates')}
-          style={{ padding: '0.75rem 1.25rem', border: 'none', borderRadius: '8px 8px 0 0', fontWeight: '600', cursor: 'pointer', background: activeTab === 'duplicates' ? '#3b82f6' : '#f1f5f9', color: activeTab === 'duplicates' ? 'white' : '#475569' }}
+          style={{
+            padding: '0.65rem 1.25rem',
+            border: activeTab === 'duplicates' ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: '8px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            background: activeTab === 'duplicates' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+            color: activeTab === 'duplicates' ? '#38bdf8' : '#94a3b8',
+            transition: 'all 0.2s ease'
+          }}
         >
           🔍 Buscador de Duplicados (SHA-256) {licenseInfo && !licenseInfo.allowed_features?.includes('sha256_duplicates') && '🔒'}
         </button>
         <button
           className={`tab-btn ${activeTab === 'dev_artifacts' ? 'active' : ''}`}
           onClick={() => setActiveTab('dev_artifacts')}
-          style={{ padding: '0.75rem 1.25rem', border: 'none', borderRadius: '8px 8px 0 0', fontWeight: '600', cursor: 'pointer', background: activeTab === 'dev_artifacts' ? '#3b82f6' : '#f1f5f9', color: activeTab === 'dev_artifacts' ? 'white' : '#475569' }}
+          style={{
+            padding: '0.65rem 1.25rem',
+            border: activeTab === 'dev_artifacts' ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: '8px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            background: activeTab === 'dev_artifacts' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+            color: activeTab === 'dev_artifacts' ? '#38bdf8' : '#94a3b8',
+            transition: 'all 0.2s ease'
+          }}
         >
           💻 Artefactos Dev & Media {licenseInfo && !licenseInfo.allowed_features?.includes('dev_cleaner') && '🔒'}
         </button>
@@ -788,7 +974,16 @@ const DiskAnalyzer = () => {
               fetchAuditLogs();
             }
           }}
-          style={{ padding: '0.75rem 1.25rem', border: 'none', borderRadius: '8px 8px 0 0', fontWeight: '600', cursor: 'pointer', background: activeTab === 'audit_logs' ? '#3b82f6' : '#f1f5f9', color: activeTab === 'audit_logs' ? 'white' : '#475569' }}
+          style={{
+            padding: '0.65rem 1.25rem',
+            border: activeTab === 'audit_logs' ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: '8px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            background: activeTab === 'audit_logs' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+            color: activeTab === 'audit_logs' ? '#38bdf8' : '#94a3b8',
+            transition: 'all 0.2s ease'
+          }}
         >
           📜 Auditoría B2B ({auditLogs.length}) {licenseInfo && !licenseInfo.allowed_features?.includes('immutable_audit_logs') && '🔒'}
         </button>
@@ -798,7 +993,16 @@ const DiskAnalyzer = () => {
             setActiveTab('license');
             fetchLicenseInfo();
           }}
-          style={{ padding: '0.75rem 1.25rem', border: 'none', borderRadius: '8px 8px 0 0', fontWeight: '600', cursor: 'pointer', background: activeTab === 'license' ? '#3b82f6' : '#f1f5f9', color: activeTab === 'license' ? 'white' : '#475569' }}
+          style={{
+            padding: '0.65rem 1.25rem',
+            border: activeTab === 'license' ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: '8px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            background: activeTab === 'license' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+            color: activeTab === 'license' ? '#38bdf8' : '#94a3b8',
+            transition: 'all 0.2s ease'
+          }}
         >
           💳 Licencia & Planes B2B
         </button>
@@ -914,6 +1118,28 @@ const DiskAnalyzer = () => {
                       }}
                     >
                       📄 Exportar Informe Corporativo (JSON)
+                    </button>
+
+                    <button 
+                      className="btn-export-pdf" 
+                      style={{ background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)', color: 'white', border: 'none', padding: '0.75rem 1.5rem', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}
+                      onClick={async () => {
+                        try {
+                          const scanId = currentScan.scan_id || currentScan.id;
+                          const blobData = await exportScanPdf(scanId);
+                          const url = window.URL.createObjectURL(new Blob([blobData]));
+                          const link = document.createElement('a');
+                          link.href = url;
+                          link.setAttribute('download', `Informe_Corporativo_Scan_${scanId}.pdf`);
+                          document.body.appendChild(link);
+                          link.click();
+                          link.remove();
+                        } catch (e) {
+                          alert('No se pudo exportar el informe en PDF.');
+                        }
+                      }}
+                    >
+                      📄 Exportar Informe Corporativo (PDF)
                     </button>
                   </div>
 
