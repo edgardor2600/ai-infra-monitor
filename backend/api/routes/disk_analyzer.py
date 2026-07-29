@@ -172,8 +172,7 @@ async def get_drives(host_id: Optional[int] = None, authorization: Optional[str]
         if conn:
             conn.close()
 
-    drives = DiskScanner.get_available_drives()
-    return {"drives": drives}
+    return {"drives": []}
 
 
 def perform_scan_task(scan_id: int, host_id: int, drive: str = "C:"):
@@ -838,30 +837,56 @@ async def get_scan(scan_id: int, authorization: Optional[str] = Header(None)):
         
         categories_data = row[4] if row[4] else {}
         
-        # Extract disk_info if it exists in categories or generate fallback
+        # Extract disk_info if it exists in categories or generate telemetry fallback
         disk_info = categories_data.get('disk_info', None) if isinstance(categories_data, dict) else None
         if not disk_info:
+            host_id = row[1]
             try:
-                import shutil
-                usage = shutil.disk_usage("C:\\")
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT payload FROM metrics WHERE host_id = %s ORDER BY created_at DESC LIMIT 1",
+                    (host_id,)
+                )
+                mrow = cursor.fetchone()
+                if mrow and mrow[0]:
+                    payload = mrow[0]
+                    metrics_dict = {}
+                    if isinstance(payload, list):
+                        for item in payload:
+                            if isinstance(item, dict) and 'metric' in item:
+                                metrics_dict[item['metric']] = item.get('value')
+                    elif isinstance(payload, dict):
+                        metrics_dict = payload.get('metrics', {})
+
+                    dt_gb = metrics_dict.get('disk_total_gb')
+                    df_gb = metrics_dict.get('disk_free_gb')
+                    dp = metrics_dict.get('disk_percent')
+                    if dt_gb and df_gb:
+                        tot = int(float(dt_gb) * (1024 ** 3))
+                        fre = int(float(df_gb) * (1024 ** 3))
+                        usd = tot - fre
+                        pct = float(dp) if dp is not None else round((usd / tot) * 100, 2)
+                        disk_info = {
+                            "drive": "C:",
+                            "device": "C:",
+                            "total": tot,
+                            "used": usd,
+                            "free": fre,
+                            "used_percent": pct,
+                            "percent_used": pct
+                        }
+            except Exception as e:
+                logger.warning(f"Error fetching telemetry for scan host_id {host_id}: {e}")
+
+            if not disk_info:
                 disk_info = {
                     "drive": "C:",
                     "device": "C:",
-                    "total": usage.total,
-                    "used": usage.used,
-                    "free": usage.free,
-                    "used_percent": round((usage.used / usage.total) * 100, 2),
-                    "percent_used": round((usage.used / usage.total) * 100, 2)
-                }
-            except Exception:
-                disk_info = {
-                    "drive": "C:",
-                    "device": "C:",
-                    "total": 489379872768,
-                    "used": 442650000000,
-                    "free": 46729872768,
-                    "used_percent": 90.46,
-                    "percent_used": 90.46
+                    "total": 0,
+                    "used": 0,
+                    "free": 0,
+                    "used_percent": 0.0,
+                    "percent_used": 0.0
                 }
 
         return {
