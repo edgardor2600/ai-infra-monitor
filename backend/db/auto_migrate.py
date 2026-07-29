@@ -52,9 +52,7 @@ def auto_migrate_schema():
                 hostname TEXT NOT NULL UNIQUE,
                 created_at TIMESTAMP NOT NULL DEFAULT NOW()
             );
-            INSERT INTO hosts (id, hostname)
-            VALUES (1, 'default-host')
-            ON CONFLICT (id) DO NOTHING;
+            -- Hosts are auto-registered when agents connect; no seed needed here.
         """)
         
         # 4. Metrics & Raw Metrics

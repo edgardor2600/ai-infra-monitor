@@ -33,7 +33,7 @@ async def get_metrics(
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
     try:
-        # Try last 10 minutes first (real-time window)
+        # Try last 30 minutes first (real-time window)
         cursor.execute(
             """
             SELECT 
@@ -41,7 +41,7 @@ async def get_metrics(
                 payload
             FROM metrics_raw
             WHERE host_id = %s
-              AND created_at >= NOW() - INTERVAL '10 minutes'
+              AND created_at >= NOW() - INTERVAL '30 minutes'
             ORDER BY created_at DESC
             LIMIT %s
             """,
@@ -49,7 +49,24 @@ async def get_metrics(
         )
         raw_metrics = cursor.fetchall()
 
-        # Fallback: if no data in last 10 min, try last 24 hours (agent may have been restarted)
+        # Fallback 1: if no data in last 30 min, try last 6 hours
+        if not raw_metrics:
+            cursor.execute(
+                """
+                SELECT 
+                    created_at,
+                    payload
+                FROM metrics_raw
+                WHERE host_id = %s
+                  AND created_at >= NOW() - INTERVAL '6 hours'
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (host_id, limit)
+            )
+            raw_metrics = cursor.fetchall()
+
+        # Fallback 2: if still no data, try last 24 hours (agent restarted after long pause)
         if not raw_metrics:
             cursor.execute(
                 """

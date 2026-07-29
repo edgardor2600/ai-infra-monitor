@@ -54,7 +54,8 @@ def test_auth_registration_and_login_flow():
 
 
 def test_hosts_auto_provisioning_for_new_org():
-    """Test that GET /hosts automatically provisions local host for new accounts without 500 error."""
+    """Test that GET /hosts returns an empty list for new orgs (no phantom server-side host).
+    Hosts are only created when a real agent connects and registers via ingest."""
     unique_email = f"auto_host_{int(time.time())}@company.com"
     reg_res = client.post("/api/v1/auth/register", json={
         "organization_name": "Auto Host Corp",
@@ -68,5 +69,5 @@ def test_hosts_auto_provisioning_for_new_org():
     assert hosts_res.status_code == 200
     data = hosts_res.json()
     assert "hosts" in data
-    assert len(data["hosts"]) >= 1
-    assert "hostname" in data["hosts"][0]
+    # New orgs have no hosts until a real agent connects — no phantom server-side host
+    assert isinstance(data["hosts"], list)

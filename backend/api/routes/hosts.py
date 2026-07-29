@@ -34,7 +34,7 @@ import socket
 async def get_hosts(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
     """
     Get all registered hosts filtered by current organization.
-    Auto-provisions local computer if none exists for this organization.
+    Hosts are registered automatically when an agent connects for the first time.
     """
     org_id = get_current_org_id(authorization)
     conn = get_db_connection()
@@ -51,22 +51,7 @@ async def get_hosts(authorization: Optional[str] = Header(None)) -> Dict[str, An
             (org_id,)
         )
         hosts = cursor.fetchall()
-        
-        if not hosts:
-            local_hostname = socket.gethostname() or "local-host"
-            cursor.execute(
-                """
-                INSERT INTO hosts (hostname, org_id)
-                VALUES (%s, %s)
-                ON CONFLICT (hostname) DO UPDATE SET org_id = EXCLUDED.org_id
-                RETURNING id, hostname, created_at;
-                """,
-                (local_hostname, org_id)
-            )
-            new_host = cursor.fetchone()
-            conn.commit()
-            hosts = [new_host]
-
+        # Return whatever real hosts exist — never auto-create a phantom server-side host
         return {"hosts": [dict(host) for host in hosts]}
         
     finally:
