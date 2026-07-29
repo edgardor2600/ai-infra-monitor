@@ -203,7 +203,16 @@ def auto_migrate_schema():
             );
         """)
         
-        conn.commit()
+        # Clean up old phantom test hosts and synthetic metrics so only real agent hosts remain
+        try:
+            cursor.execute("""
+                DELETE FROM hosts 
+                WHERE hostname IN ('default-host', 'local-host', 'test-host', 'test-host-1');
+            """)
+            conn.commit()
+        except Exception as cleanup_err:
+            logger.warning(f"Phantom host cleanup notice: {cleanup_err}")
+
         cursor.close()
         logger.info("Auto-migration: All database tables and columns verified successfully.")
     except Exception as e:

@@ -33,7 +33,8 @@ async def get_metrics(
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
     try:
-        # Try last 30 minutes first (real-time window)
+        # Only return metrics from the last 30 minutes (real live window).
+        # Never fall back to old 24-hour synthetic test data.
         cursor.execute(
             """
             SELECT 
@@ -48,40 +49,6 @@ async def get_metrics(
             (host_id, limit)
         )
         raw_metrics = cursor.fetchall()
-
-        # Fallback 1: if no data in last 30 min, try last 6 hours
-        if not raw_metrics:
-            cursor.execute(
-                """
-                SELECT 
-                    created_at,
-                    payload
-                FROM metrics_raw
-                WHERE host_id = %s
-                  AND created_at >= NOW() - INTERVAL '6 hours'
-                ORDER BY created_at DESC
-                LIMIT %s
-                """,
-                (host_id, limit)
-            )
-            raw_metrics = cursor.fetchall()
-
-        # Fallback 2: if still no data, try last 24 hours (agent restarted after long pause)
-        if not raw_metrics:
-            cursor.execute(
-                """
-                SELECT 
-                    created_at,
-                    payload
-                FROM metrics_raw
-                WHERE host_id = %s
-                  AND created_at >= NOW() - INTERVAL '24 hours'
-                ORDER BY created_at DESC
-                LIMIT %s
-                """,
-                (host_id, limit)
-            )
-            raw_metrics = cursor.fetchall()
         
         metrics = []
         for record in raw_metrics:
