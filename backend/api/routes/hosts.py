@@ -34,7 +34,7 @@ import socket
 async def get_hosts(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
     """
     Get all registered hosts filtered by current organization.
-    Hosts are registered automatically when an agent connects for the first time.
+    If a newly created organization has 0 hosts, falls back to default org hosts (org_id=1).
     """
     org_id = get_current_org_id(authorization)
     conn = get_db_connection()
@@ -43,7 +43,7 @@ async def get_hosts(authorization: Optional[str] = Header(None)) -> Dict[str, An
     try:
         cursor.execute(
             """
-            SELECT id, hostname, created_at
+            SELECT id, hostname, created_at, org_id
             FROM hosts
             WHERE org_id = %s
             ORDER BY id ASC
@@ -51,7 +51,19 @@ async def get_hosts(authorization: Optional[str] = Header(None)) -> Dict[str, An
             (org_id,)
         )
         hosts = cursor.fetchall()
-        # Return whatever real hosts exist — never auto-create a phantom server-side host
+        
+        # Fallback for new organizations: if org has no hosts yet, show default hosts
+        if not hosts and org_id != 1:
+            cursor.execute(
+                """
+                SELECT id, hostname, created_at, org_id
+                FROM hosts
+                WHERE org_id = 1
+                ORDER BY id ASC
+                """
+            )
+            hosts = cursor.fetchall()
+
         return {"hosts": [dict(host) for host in hosts]}
         
     finally:
@@ -60,11 +72,13 @@ async def get_hosts(authorization: Optional[str] = Header(None)) -> Dict[str, An
 
 
 @router.post("/hosts/register")
-async def register_host(payload: Dict[str, Any]):
-    """Auto-register host by hostname when agent connects."""
+async def register_host(payload: Dict[str, Any], authorization: Optional[str] = Header(None)):
+    """Auto-register host by hostname when agent connects, attaching it to current org_id."""
     hostname = payload.get("hostname")
     if not hostname:
         raise HTTPException(status_code=400, detail="Hostname required")
+    
+    org_id = payload.get("org_id") or get_current_org_id(authorization)
     
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -72,15 +86,15 @@ async def register_host(payload: Dict[str, Any]):
         cursor.execute(
             """
             INSERT INTO hosts (hostname, org_id)
-            VALUES (%s, 1)
-            ON CONFLICT (hostname) DO UPDATE SET hostname = EXCLUDED.hostname
-            RETURNING id, hostname;
+            VALUES (%s, %s)
+            ON CONFLICT (hostname) DO UPDATE SET org_id = EXCLUDED.org_id
+            RETURNING id, hostname, org_id;
             """,
-            (hostname,)
+            (hostname, org_id)
         )
         row = cursor.fetchone()
         conn.commit()
-        return {"id": row['id'], "hostname": row['hostname']}
+        return {"id": row['id'], "hostname": row['hostname'], "org_id": row['org_id']}
     finally:
         cursor.close()
         conn.close()
