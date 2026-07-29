@@ -10,7 +10,7 @@ const ConnectHostModal = ({ isOpen, onClose }) => {
 
   if (!isOpen) return null;
 
-  const winCommand = `pip install psutil; python -c "import os, urllib.request; os.environ['AGENT_ORG_ID']='${orgId}'; exec(urllib.request.urlopen('https://raw.githubusercontent.com/edgardor2600/ai-infra-monitor/main/agent/standalone_agent.py').read())"`;
+  const winCommand = `pip install psutil && python -c "import os, urllib.request; os.environ['AGENT_ORG_ID']='${orgId}'; exec(urllib.request.urlopen('https://raw.githubusercontent.com/edgardor2600/ai-infra-monitor/main/agent/standalone_agent.py').read())"`;
   const linuxCommand = `pip install psutil && python3 -c "import os, urllib.request; os.environ['AGENT_ORG_ID']='${orgId}'; exec(urllib.request.urlopen('https://raw.githubusercontent.com/edgardor2600/ai-infra-monitor/main/agent/standalone_agent.py').read())"`;
 
   const copyToClipboard = (text, osType) => {
