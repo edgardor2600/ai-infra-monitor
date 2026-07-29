@@ -207,6 +207,7 @@ async def register(request: RegisterRequest):
                 "id": user_id,
                 "email": email,
                 "role": role,
+                "org_id": org_id,
                 "organization_id": org_id,
                 "organization_name": org_name,
                 "license_tier": tier.upper()
@@ -256,6 +257,7 @@ async def login(request: LoginRequest):
                 "id": user_id,
                 "email": email,
                 "role": role,
+                "org_id": org_id,
                 "organization_id": org_id,
                 "organization_name": org_name,
                 "license_tier": tier.upper()
@@ -280,6 +282,7 @@ async def get_me(authorization: Optional[str] = Header(None)):
             "id": payload.get("user_id"),
             "email": payload.get("email"),
             "role": payload.get("role"),
+            "org_id": payload.get("org_id"),
             "organization_id": payload.get("org_id"),
             "organization_name": payload.get("org_name"),
             "license_tier": (payload.get("license_tier") or "PRO_SAAS").upper()

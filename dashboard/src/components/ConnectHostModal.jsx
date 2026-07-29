@@ -5,7 +5,7 @@ import './ConnectHostModal.css';
 const ConnectHostModal = ({ isOpen, onClose }) => {
   const [copiedOS, setCopiedOS] = useState(null);
   const { user } = useAuth();
-  const orgId = user?.org_id || 1;
+  const orgId = user?.organization_id || user?.org_id || 1;
   const backendUrl = "https://ai-infra-monitor-api.onrender.com";
 
   if (!isOpen) return null;
