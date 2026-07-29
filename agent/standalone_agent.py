@@ -28,13 +28,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger("StandaloneAgent")
 
+import ssl
+try:
+    ssl._create_default_https_context = ssl._create_unverified_context
+except Exception:
+    pass
+
 BACKEND_URL = os.getenv("BACKEND_URL", "https://ai-infra-monitor-api.onrender.com").rstrip("/")
 INTERVAL = int(os.getenv("AGENT_INTERVAL", "3"))
-
-...
-
-            elapsed = time.monotonic() - timer_start
-            if len(buffer) >= 1 or elapsed >= 3:
 
 WINDOWS_SYSTEM_PROCESSES = {
     'System', 'Registry', 'smss.exe', 'csrss.exe', 'wininit.exe',
@@ -172,32 +173,21 @@ def main():
     host_id = auto_register_host()
     logger.info(f"Iniciando telemetría para Host ID: {host_id} (intervalo: {INTERVAL}s)...")
     
-    buffer = []
-    timer_start = time.monotonic()
-    
     while True:
         try:
-            sample = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "metrics": collect_metrics(),
-                "processes": collect_process_metrics()
-            }
-            buffer.append(sample)
+            metrics = collect_metrics()
+            processes = collect_process_metrics()
             
-            elapsed = time.monotonic() - timer_start
-            if len(buffer) >= 1 or elapsed >= 3:
-                batch = {
-                    "host_id": host_id,
-                    "hostname": hostname,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "interval": INTERVAL,
-                    "samples": buffer
-                }
-                res = http_post(f"{BACKEND_URL}/api/v1/ingest/metrics", batch)
-                logger.info(f"⚡ Telemetría enviada con éxito ({len(buffer)} muestras): {res.get('status', 'ok')}")
-                buffer = []
-                timer_start = time.monotonic()
-                
+            batch = {
+                "host_id": host_id,
+                "hostname": hostname,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "interval": INTERVAL,
+                "samples": metrics,
+                "processes": processes
+            }
+            res = http_post(f"{BACKEND_URL}/api/v1/ingest/metrics", batch)
+            logger.info(f"⚡ Telemetría enviada con éxito ({len(metrics)} métricas, {len(processes)} procesos): {res.get('status', 'ok')}")
             time.sleep(INTERVAL)
         except KeyboardInterrupt:
             print("\nAgente detenido por el usuario.")
