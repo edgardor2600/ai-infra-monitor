@@ -87,6 +87,7 @@ async def get_dashboard_overview(authorization: Optional[str] = Header(None)) ->
                 h.created_at as registered_at,
                 lm.payload,
                 COALESCE(lm.created_at, h.created_at) as last_seen,
+                COALESCE(ha.alert_count, 0) as alert_count
             FROM hosts h
             LEFT JOIN latest_metrics lm ON h.id = lm.host_id
             LEFT JOIN host_alerts ha ON h.id = ha.host_id
