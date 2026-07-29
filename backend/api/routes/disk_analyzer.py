@@ -191,6 +191,62 @@ def perform_scan_task(scan_id: int, host_id: int, drive: str = "C:"):
             (scan_id,)
         )
         conn.commit()
+
+        # Check if agent scan results exist for this host
+        cursor.execute(
+            """
+            SELECT categories, total_size_bytes FROM disk_scans
+            WHERE host_id = %s AND status = 'completed' AND categories IS NOT NULL AND id != %s
+            ORDER BY completed_at DESC LIMIT 1
+            """,
+            (host_id, scan_id)
+        )
+        agent_scan_row = cursor.fetchone()
+        if agent_scan_row and agent_scan_row[0]:
+            agent_categories = agent_scan_row[0]
+            if isinstance(agent_categories, str):
+                agent_categories = json.loads(agent_categories)
+            agent_total_size = agent_scan_row[1] or 0
+            
+            categories_with_disk_info = agent_categories.copy()
+            categories_with_disk_info['drive'] = drive
+            
+            cursor.execute(
+                """
+                UPDATE disk_scans 
+                SET status = 'completed',
+                    total_size_bytes = %s,
+                    categories = %s,
+                    completed_at = NOW()
+                WHERE id = %s
+                """,
+                (agent_total_size, json.dumps(categories_with_disk_info), scan_id)
+            )
+            conn.commit()
+
+            for cat_name, cat_data in agent_categories.items():
+                if isinstance(cat_data, dict):
+                    for file_info in cat_data.get('files', []):
+                        cursor.execute(
+                            """
+                            INSERT INTO cleanup_items 
+                            (scan_id, category, file_path, file_size_bytes, last_accessed, is_safe, risk_level)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            """,
+                            (
+                                scan_id,
+                                cat_name,
+                                file_info.get('path', 'unknown'),
+                                file_info.get('size', 0),
+                                file_info.get('last_accessed'),
+                                file_info.get('is_safe', True),
+                                file_info.get('risk_level', 'low')
+                            )
+                        )
+            conn.commit()
+            cursor.close()
+            logger.info(f"Scan task completed using agent telemetry for host_id={host_id}")
+            return
         
         scanner = DiskScanner(host_id, drive=drive)
         scan_results = scanner.scan_all_categories()
