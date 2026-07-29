@@ -34,7 +34,7 @@ import socket
 async def get_hosts(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
     """
     Get all registered hosts filtered by current organization.
-    If a newly created organization has 0 hosts, falls back to default org hosts (org_id=1).
+    Strict 100% org_id multi-tenant isolation.
     """
     org_id = get_current_org_id(authorization)
     conn = get_db_connection()
@@ -51,19 +51,6 @@ async def get_hosts(authorization: Optional[str] = Header(None)) -> Dict[str, An
             (org_id,)
         )
         hosts = cursor.fetchall()
-        
-        # Fallback for new organizations: if org has no hosts yet, show default hosts
-        if not hosts and org_id != 1:
-            cursor.execute(
-                """
-                SELECT id, hostname, created_at, org_id
-                FROM hosts
-                WHERE org_id = 1
-                ORDER BY id ASC
-                """
-            )
-            hosts = cursor.fetchall()
-
         return {"hosts": [dict(host) for host in hosts]}
         
     finally:

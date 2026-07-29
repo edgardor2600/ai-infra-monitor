@@ -96,39 +96,6 @@ async def get_dashboard_overview(authorization: Optional[str] = Header(None)) ->
         """, (org_id, org_id))
         hosts_data = cursor.fetchall()
 
-        # Fallback for new accounts: if new org has no hosts yet, show default hosts
-        if not hosts_data and org_id != 1:
-            cursor.execute("""
-                WITH latest_metrics AS (
-                    SELECT DISTINCT ON (host_id)
-                        host_id,
-                        payload,
-                        created_at
-                    FROM metrics_raw
-                    WHERE created_at >= NOW() - INTERVAL '24 hours'
-                    ORDER BY host_id, created_at DESC
-                ),
-                host_alerts AS (
-                    SELECT 
-                        host_id,
-                        COUNT(*) as alert_count
-                    FROM alerts
-                    WHERE status = 'open'
-                    GROUP BY host_id
-                )
-                SELECT 
-                    h.id,
-                    h.hostname,
-                    h.created_at as registered_at,
-                    lm.payload,
-                    COALESCE(lm.created_at, h.created_at) as last_seen,
-                    COALESCE(ha.alert_count, 0) as alert_count
-                FROM hosts h
-                LEFT JOIN latest_metrics lm ON h.id = lm.host_id
-                LEFT JOIN host_alerts ha ON h.id = ha.host_id
-                ORDER BY h.hostname
-            """)
-            hosts_data = cursor.fetchall()
         hosts_status = []
         
         for row in hosts_data:

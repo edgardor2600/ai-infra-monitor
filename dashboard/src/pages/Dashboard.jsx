@@ -154,47 +154,86 @@ function Dashboard() {
           <Link to="/hosts" className="view-all-link">View All →</Link>
         </div>
         
-        <div className="hosts-grid">
-          {overview.hosts_status.map((host) => {
-            const status = getHostStatus(host);
-            return (
-              <Link 
-                key={host.id} 
-                to={`/hosts/${host.id}`} 
-                className={`host-status-card ${status}`}
-              >
-                <div className="host-header">
-                  <div className="host-name">{host.hostname}</div>
-                  <div className={`status-indicator ${status}`}></div>
-                </div>
-                
-                <div className="host-metrics">
-                  <div className="metric">
-                    <span className="metric-label">CPU</span>
-                    <span className="metric-value">{parseFloat(host.cpu_percent).toFixed(1)}%</span>
+        {overview.hosts_status.length === 0 ? (
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.03)',
+            border: '1px dashed rgba(255, 255, 255, 0.15)',
+            borderRadius: '12px',
+            padding: '40px 20px',
+            textAlign: 'center',
+            marginBottom: '30px'
+          }}>
+            <div style={{ fontSize: '36px', marginBottom: '12px' }}>🖥️</div>
+            <h3 style={{ margin: '0 0 8px 0', color: '#ffffff' }}>No hay equipos conectados a esta cuenta</h3>
+            <p style={{ color: '#9ca3af', maxWidth: '520px', margin: '0 auto 18px auto', fontSize: '14px', lineHeight: '1.5' }}>
+              Esta cuenta está completamente limpia. Haz clic en el botón a continuación para obtener tu comando único de 1 sola línea e inicie el monitoreo en cualquier computadora.
+            </p>
+            <button 
+              onClick={() => setIsConnectOpen(true)}
+              style={{
+                background: 'linear-gradient(135deg, #10b981, #059669)',
+                color: '#ffffff',
+                border: 'none',
+                padding: '10px 20px',
+                borderRadius: '8px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)'
+              }}
+            >
+              🚀 Conectar Mi Primer Servidor
+            </button>
+          </div>
+        ) : (
+          <div className="hosts-grid">
+            {overview.hosts_status.map((host) => {
+              const status = getHostStatus(host);
+              return (
+                <div key={host.id} className={`host-card ${status}`}>
+                  <div className="host-card-header">
+                    <div className="host-name">
+                      <span className={`status-indicator ${status}`}></span>
+                      {host.hostname}
+                    </div>
+                    <span className="alert-badge">{host.alert_count} alerts</span>
                   </div>
-                  <div className="metric">
-                    <span className="metric-label">Memory</span>
-                    <span className="metric-value">{parseFloat(host.mem_percent).toFixed(1)}%</span>
+                  
+                  <div className="host-metrics">
+                    <div className="metric-row">
+                      <span>CPU:</span>
+                      <div className="metric-bar-container">
+                        <div 
+                          className="metric-bar cpu" 
+                          style={{ width: `${Math.min(host.cpu_percent, 100)}%` }}
+                        ></div>
+                      </div>
+                      <span className="metric-value">{host.cpu_percent.toFixed(1)}%</span>
+                    </div>
+
+                    <div className="metric-row">
+                      <span>RAM:</span>
+                      <div className="metric-bar-container">
+                        <div 
+                          className="metric-bar memory" 
+                          style={{ width: `${Math.min(host.mem_percent, 100)}%` }}
+                        ></div>
+                      </div>
+                      <span className="metric-value">{host.mem_percent.toFixed(1)}%</span>
+                    </div>
+                  </div>
+
+                  <div className="host-card-footer">
+                    <span className="last-seen">
+                      Last seen: {new Date(host.last_seen).toLocaleTimeString()}
+                    </span>
+                    <Link to={`/hosts/${host.id}`} className="details-link">
+                      Details →
+                    </Link>
                   </div>
                 </div>
-
-                {host.alert_count > 0 && (
-                  <div className="host-alerts">
-                    {host.alert_count} active alert{host.alert_count !== 1 ? 's' : ''}
-                  </div>
-                )}
-
-                <div className="host-footer">
-                  Last seen: {new Date(host.last_seen).toLocaleTimeString()}
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-
-        {overview.hosts_status.length === 0 && (
-          <div className="no-data">No hosts registered yet</div>
+              );
+            })}
+          </div>
         )}
       </div>
 

@@ -146,7 +146,8 @@ def auto_register_host():
                     return host.get("id")
         
         # Register via POST if not found
-        reg_payload = json.dumps({"hostname": hostname}).encode('utf-8')
+        org_id = int(os.getenv("AGENT_ORG_ID", "1"))
+        reg_payload = json.dumps({"hostname": hostname, "org_id": org_id}).encode('utf-8')
         reg_req = urllib.request.Request(
             f"{BACKEND_URL}/api/v1/hosts/register",
             data=reg_payload,

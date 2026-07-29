@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
+import { useAuth } from '../context/AuthContext';
 import './ConnectHostModal.css';
 
 const ConnectHostModal = ({ isOpen, onClose }) => {
   const [copiedOS, setCopiedOS] = useState(null);
+  const { user } = useAuth();
+  const orgId = user?.org_id || 1;
   const backendUrl = "https://ai-infra-monitor-api.onrender.com";
 
   if (!isOpen) return null;
 
-  const winCommand = `pip install psutil; python -c "import urllib.request; exec(urllib.request.urlopen('https://raw.githubusercontent.com/edgardor2600/ai-infra-monitor/main/agent/standalone_agent.py').read())"`;
-  const linuxCommand = `pip install psutil && curl -sSL https://raw.githubusercontent.com/edgardor2600/ai-infra-monitor/main/agent/standalone_agent.py | python3 -`;
+  const winCommand = `$env:AGENT_ORG_ID="${orgId}"; pip install psutil; python -c "import urllib.request; exec(urllib.request.urlopen('https://raw.githubusercontent.com/edgardor2600/ai-infra-monitor/main/agent/standalone_agent.py').read())"`;
+  const linuxCommand = `export AGENT_ORG_ID="${orgId}" && pip install psutil && curl -sSL https://raw.githubusercontent.com/edgardor2600/ai-infra-monitor/main/agent/standalone_agent.py | python3 -`;
 
   const copyToClipboard = (text, osType) => {
     navigator.clipboard.writeText(text);

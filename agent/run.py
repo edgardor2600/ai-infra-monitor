@@ -47,12 +47,13 @@ async def auto_register_host(backend_url: str) -> int:
                     logger.info(f"Host '{hostname}' already registered with ID: {host_id}")
                     return host_id
             
-            # Host not found, register it automatically
-            reg_resp = await client.post(f"{backend_url}/api/v1/hosts/register", json={"hostname": hostname})
+            # Host not found, register it automatically with AGENT_ORG_ID if present
+            org_id = int(os.getenv("AGENT_ORG_ID", "1"))
+            reg_resp = await client.post(f"{backend_url}/api/v1/hosts/register", json={"hostname": hostname, "org_id": org_id})
             reg_resp.raise_for_status()
             reg_data = reg_resp.json()
             new_id = reg_data.get("id", 1)
-            logger.info(f"Host '{hostname}' successfully registered with ID: {new_id}")
+            logger.info(f"Host '{hostname}' successfully registered for org {org_id} with ID: {new_id}")
             return new_id
             
         except Exception as e:
