@@ -126,12 +126,9 @@ class DiskScanner:
         total_size = sum(cat['total_size'] for cat in results.values())
         total_files = sum(cat['file_count'] for cat in results.values())
         
-        # If no files found (e.g. running in cloud container / empty environment), generate cloud demonstration telemetry
+        # If no cleanable files found, return empty category metrics cleanly without synthetic mock generation
         if total_files == 0:
-            logger.info("No local cleanup files found in container, generating cloud demonstration telemetry...")
-            results = self._generate_cloud_demo_results()
-            total_size = sum(cat['total_size'] for cat in results.values())
-            total_files = sum(cat['file_count'] for cat in results.values())
+            logger.info("No cleanable files found on target drive/container.")
         
         disk_info = self._get_disk_info()
         
