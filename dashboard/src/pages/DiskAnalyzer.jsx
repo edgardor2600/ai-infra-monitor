@@ -22,19 +22,17 @@ const FolderSelectorUI = ({ currentPath, onPathChange, placeholder }) => {
       if (firstFile.webkitRelativePath) {
         const rootFolder = firstFile.webkitRelativePath.split('/')[0];
         if (rootFolder) {
-          onPathChange(`C:\\Users\\EDGARDO\\${rootFolder}`);
+          onPathChange(`C:\\${rootFolder}`);
         }
       }
     }
   };
 
   const presets = [
-    { label: '📁 Documentos', path: 'C:\\Users\\EDGARDO\\Documents' },
-    { label: '📥 Descargas', path: 'C:\\Users\\EDGARDO\\Downloads' },
-    { label: '🖼️ Imágenes', path: 'C:\\Users\\EDGARDO\\Pictures' },
-    { label: '🎥 Videos', path: 'C:\\Users\\EDGARDO\\Videos' },
-    { label: '💻 Escritorio', path: 'C:\\Users\\EDGARDO\\Desktop' },
-    { label: '💿 Disco C:', path: 'C:\\' },
+    { label: '💿 Disco C: (Raíz)', path: 'C:\\' },
+    { label: '⚙️ Archivos Temporales (Windows)', path: 'C:\\Windows\\Temp' },
+    { label: '📁 Archivos de Programa', path: 'C:\\Program Files' },
+    { label: '🌐 Usuarios Sistema', path: 'C:\\Users' },
   ];
 
   return (

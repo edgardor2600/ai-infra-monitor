@@ -531,7 +531,7 @@ async def get_audit_logs(limit: int = 30, authorization: Optional[str] = Header(
             FROM cleanup_audit_logs l
             LEFT JOIN organizations o ON l.org_id = o.id
             LEFT JOIN hosts h ON l.host_id = h.id
-            WHERE (l.org_id = %s OR l.org_id = 1 OR l.org_id IS NULL)
+            WHERE l.org_id = %s
             ORDER BY l.executed_at DESC
             LIMIT %s
         """, (org_id, limit))
@@ -802,7 +802,7 @@ async def get_scan(scan_id: int, authorization: Optional[str] = Header(None)):
             SELECT id, host_id, status, total_size_bytes, categories, 
                    recommendations, error_message, started_at, completed_at
             FROM disk_scans
-            WHERE id = %s AND (org_id = %s OR org_id = 1 OR org_id IS NULL)
+            WHERE id = %s AND org_id = %s
             """,
             (scan_id, org_id)
         )
@@ -884,7 +884,7 @@ async def list_scans(host_id: int = None, limit: int = 10, authorization: Option
                 """
                 SELECT id, host_id, status, total_size_bytes, started_at, completed_at
                 FROM disk_scans
-                WHERE (org_id = %s OR org_id = 1 OR org_id IS NULL) AND host_id = %s
+                WHERE org_id = %s AND host_id = %s
                 ORDER BY started_at DESC
                 LIMIT %s
                 """,
@@ -895,7 +895,7 @@ async def list_scans(host_id: int = None, limit: int = 10, authorization: Option
                 """
                 SELECT id, host_id, status, total_size_bytes, started_at, completed_at
                 FROM disk_scans
-                WHERE (org_id = %s OR org_id = 1 OR org_id IS NULL)
+                WHERE org_id = %s
                 ORDER BY started_at DESC
                 LIMIT %s
                 """,
