@@ -16,6 +16,7 @@ from backend.api.routes.auth import decode_jwt_token
 
 from backend.api.models.disk_analyzer import (
     ScanRequest,
+    AgentScanPayload,
     ScanResponse,
     CleanupRequest,
     CleanupResponse,
@@ -301,6 +302,62 @@ async def start_scan(request: ScanRequest, background_tasks: BackgroundTasks, au
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to start scan"
         )
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.post("/agent-scan-results", response_model=dict)
+async def receive_agent_scan_results(payload: AgentScanPayload):
+    """Receive real local disk scan results directly from a running agent."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT org_id FROM hosts WHERE id = %s;", (payload.host_id,))
+        hrow = cursor.fetchone()
+        org_id = hrow[0] if hrow else payload.org_id
+
+        categories_with_disk_info = payload.categories.copy()
+        categories_with_disk_info['drive'] = payload.drive
+
+        cursor.execute(
+            """
+            INSERT INTO disk_scans (host_id, org_id, status, total_size_bytes, categories, started_at, completed_at)
+            VALUES (%s, %s, 'completed', %s, %s, NOW(), NOW())
+            RETURNING id
+            """,
+            (payload.host_id, org_id, payload.total_size_bytes, json.dumps(categories_with_disk_info))
+        )
+        scan_id = cursor.fetchone()[0]
+        conn.commit()
+
+        for cat_name, cat_data in payload.categories.items():
+            if isinstance(cat_data, dict):
+                for file_info in cat_data.get('files', []):
+                    cursor.execute(
+                        """
+                        INSERT INTO cleanup_items 
+                        (scan_id, category, file_path, file_size_bytes, last_accessed, is_safe, risk_level)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            scan_id,
+                            cat_name,
+                            file_info.get('path', 'unknown'),
+                            file_info.get('size', 0),
+                            file_info.get('last_accessed'),
+                            file_info.get('is_safe', True),
+                            file_info.get('risk_level', 'low')
+                        )
+                    )
+        conn.commit()
+        cursor.close()
+        return {"ok": True, "scan_id": scan_id}
+    except Exception as e:
+        logger.error(f"Error saving agent scan results: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         if conn:
             conn.close()

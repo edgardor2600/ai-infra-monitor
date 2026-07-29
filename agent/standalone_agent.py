@@ -162,6 +162,98 @@ def auto_register_host():
     return 1
 
 
+def scan_local_cleanup_paths():
+    """Perform real disk cleanup scan on local machine."""
+    is_win = os.name == 'nt'
+    user_home = os.path.expanduser('~')
+    
+    paths_map = {
+        'temp_files': {
+            'display_name': 'Archivos Temporales',
+            'description': 'Archivos y carpetas temporales de sistema y aplicaciones.',
+            'risk_level': 'low',
+            'is_safe_auto': True,
+            'check_paths': [
+                os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Temp') if is_win else '/tmp',
+                os.path.join(user_home, 'AppData', 'Local', 'Temp') if is_win else '/var/tmp'
+            ]
+        },
+        'browser_cache': {
+            'display_name': 'Caché de Navegadores',
+            'description': 'Imágenes y recursos almacenados por Chrome y Edge.',
+            'risk_level': 'low',
+            'is_safe_auto': True,
+            'check_paths': [
+                os.path.join(user_home, 'AppData', 'Local', 'Google', 'Chrome', 'User Data', 'Default', 'Cache') if is_win else os.path.join(user_home, '.cache', 'google-chrome'),
+                os.path.join(user_home, 'AppData', 'Local', 'Microsoft', 'Edge', 'User Data', 'Default', 'Cache') if is_win else None
+            ]
+        },
+        'pkg_managers': {
+            'display_name': 'Caché de Gestores de Paquetes',
+            'description': 'Caché acumulado de pip, npm y yarn.',
+            'risk_level': 'medium',
+            'is_safe_auto': False,
+            'check_paths': [
+                os.path.join(user_home, 'AppData', 'Local', 'pip', 'Cache') if is_win else os.path.join(user_home, '.cache', 'pip'),
+                os.path.join(user_home, 'AppData', 'Local', 'npm-cache') if is_win else os.path.join(user_home, '.npm', '_cacache')
+            ]
+        },
+        'system_logs': {
+            'display_name': 'Logs del Sistema',
+            'description': 'Informes de eventos antiguos y volcados de memoria.',
+            'risk_level': 'low',
+            'is_safe_auto': True,
+            'check_paths': [
+                os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Logs') if is_win else '/var/log'
+            ]
+        }
+    }
+    
+    categories_res = {}
+    total_size_bytes = 0
+    
+    for cat_id, cat_meta in paths_map.items():
+        cat_files = []
+        cat_size = 0
+        cat_count = 0
+        
+        for folder_path in cat_meta['check_paths']:
+            if not folder_path or not os.path.exists(folder_path):
+                continue
+            try:
+                for root, _, files in os.walk(folder_path):
+                    for f in files:
+                        fp = os.path.join(root, f)
+                        try:
+                            fsize = os.path.getsize(fp)
+                            cat_size += fsize
+                            cat_count += 1
+                            if len(cat_files) < 10:
+                                cat_files.append({
+                                    "path": fp,
+                                    "size": fsize,
+                                    "is_safe": cat_meta['is_safe_auto'],
+                                    "risk_level": cat_meta['risk_level']
+                                })
+                        except Exception:
+                            continue
+            except Exception:
+                continue
+                
+        total_size_bytes += cat_size
+        categories_res[cat_id] = {
+            "display_name": cat_meta['display_name'],
+            "description": cat_meta['description'],
+            "risk_level": cat_meta['risk_level'],
+            "is_safe_auto": cat_meta['is_safe_auto'],
+            "total_size": cat_size,
+            "file_count": cat_count,
+            "files": cat_files
+        }
+        
+    return categories_res, total_size_bytes
+
+
 def main():
     hostname = socket.gethostname()
     print("=" * 60)
@@ -173,6 +265,23 @@ def main():
     host_id = auto_register_host()
     logger.info(f"Iniciando telemetría para Host ID: {host_id} (intervalo: {INTERVAL}s)...")
     
+    # Perform initial real local disk scan for this machine
+    try:
+        logger.info("Realizando escaneo local de disco inicial en el equipo...")
+        cat_res, tot_size = scan_local_cleanup_paths()
+        org_id = int(os.getenv("AGENT_ORG_ID", "1"))
+        scan_payload = {
+            "host_id": host_id,
+            "org_id": org_id,
+            "drive": "C:" if os.name == 'nt' else "/",
+            "total_size_bytes": tot_size,
+            "categories": cat_res
+        }
+        http_post(f"{BACKEND_URL}/api/v1/disk-analyzer/agent-scan-results", scan_payload)
+        logger.info(f"🔍 Escaneo de disco enviado con éxito: {tot_size} bytes en categorías reales.")
+    except Exception as e:
+        logger.warning(f"No se pudo enviar escaneo inicial de disco: {e}")
+
     while True:
         try:
             metrics = collect_metrics()

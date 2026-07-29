@@ -15,6 +15,15 @@ class ScanRequest(BaseModel):
     drive: Optional[str] = Field("C:", description="Target drive letter to scan (e.g. C:, D:)")
 
 
+class AgentScanPayload(BaseModel):
+    """Payload for real local disk scan results sent directly from agent"""
+    host_id: int = Field(..., description="Host ID sending scan results")
+    org_id: int = Field(1, description="Organization ID")
+    drive: str = Field("C:", description="Target drive letter")
+    total_size_bytes: int = Field(..., description="Total size in bytes")
+    categories: Dict[str, Dict] = Field(..., description="Scan categories with files and sizes")
+
+
 class CategoryInfo(BaseModel):
     """Information about a cleanup category"""
     name: str
