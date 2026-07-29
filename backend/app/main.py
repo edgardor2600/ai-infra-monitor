@@ -50,15 +50,16 @@ app = FastAPI(
 
 import os
 
-# Configure CORS
-allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
-origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
-if not origins:
-    origins = ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5173"]
-
+# Configure CORS - Allow all origins including Vercel preview deployments, production domains, and localhost
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins if "*" not in origins else ["*"],
+    allow_origins=["*"] if os.getenv("ALLOWED_ORIGINS") == "*" else [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://ai-infra-monitor.vercel.app"
+    ],
+    allow_origin_regex=r"https://.*\.vercel\.app|http://localhost:.*|http://127\.0\.0\.1:.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
