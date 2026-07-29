@@ -10,8 +10,9 @@ const ConnectHostModal = ({ isOpen, onClose }) => {
 
   if (!isOpen) return null;
 
-  const winCommand = `pip install psutil && python -c "import os, urllib.request; os.environ['AGENT_ORG_ID']='${orgId}'; exec(urllib.request.urlopen('https://raw.githubusercontent.com/edgardor2600/ai-infra-monitor/main/agent/standalone_agent.py').read())"`;
-  const linuxCommand = `pip install psutil && python3 -c "import os, urllib.request; os.environ['AGENT_ORG_ID']='${orgId}'; exec(urllib.request.urlopen('https://raw.githubusercontent.com/edgardor2600/ai-infra-monitor/main/agent/standalone_agent.py').read())"`;
+  const winCmdCommand = `pip install psutil && python -c "import os, urllib.request; os.environ['AGENT_ORG_ID']='${orgId}'; exec(urllib.request.urlopen('https://raw.githubusercontent.com/edgardor2600/ai-infra-monitor/main/agent/standalone_agent.py').read())"`;
+  const winPsCommand = `$env:AGENT_ORG_ID="${orgId}"; pip install psutil; python -c "import urllib.request; exec(urllib.request.urlopen('https://raw.githubusercontent.com/edgardor2600/ai-infra-monitor/main/agent/standalone_agent.py').read())"`;
+  const linuxCommand = `export AGENT_ORG_ID="${orgId}" && pip install psutil && python3 -c "import os, urllib.request; os.environ['AGENT_ORG_ID']='${orgId}'; exec(urllib.request.urlopen('https://raw.githubusercontent.com/edgardor2600/ai-infra-monitor/main/agent/standalone_agent.py').read())"`;
 
   const copyToClipboard = (text, osType) => {
     navigator.clipboard.writeText(text);
@@ -38,7 +39,7 @@ const ConnectHostModal = ({ isOpen, onClose }) => {
             <div className="step-number">1</div>
             <div className="step-content">
               <h3>Abre la Terminal en la máquina a monitorear</h3>
-              <p>Abre PowerShell (Windows) o la Terminal (Linux / Mac / VPS) en el equipo que deseas conectar.</p>
+              <p>Abre <strong>CMD</strong> o <strong>PowerShell</strong> (Windows), o la <strong>Terminal</strong> (Linux / macOS / VPS) en el equipo que deseas conectar.</p>
             </div>
           </div>
 
@@ -46,25 +47,39 @@ const ConnectHostModal = ({ isOpen, onClose }) => {
           <div className="step-card">
             <div className="step-number">2</div>
             <div className="step-content">
-              <h3>Copia y ejecuta el comando de 1 línea</h3>
+              <h3>Copia y ejecuta el comando de 1 línea según tu terminal</h3>
               
-              {/* Windows Tab */}
+              {/* Windows CMD Tab */}
               <div className="command-box-group">
-                <div className="os-badge">🪟 Windows (PowerShell)</div>
+                <div className="os-badge">🪟 Windows (CMD - Símbolo del Sistema)</div>
                 <div className="command-snippet">
-                  <code>{winCommand}</code>
+                  <code>{winCmdCommand}</code>
                   <button 
-                    className={`btn-copy ${copiedOS === 'win' ? 'copied' : ''}`}
-                    onClick={() => copyToClipboard(winCommand, 'win')}
+                    className={`btn-copy ${copiedOS === 'wincmd' ? 'copied' : ''}`}
+                    onClick={() => copyToClipboard(winCmdCommand, 'wincmd')}
                   >
-                    {copiedOS === 'win' ? '✓ ¡Copiado!' : '📋 Copiar'}
+                    {copiedOS === 'wincmd' ? '✓ ¡Copiado!' : '📋 Copiar'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Windows PowerShell Tab */}
+              <div className="command-box-group">
+                <div className="os-badge">⚡ Windows (PowerShell)</div>
+                <div className="command-snippet">
+                  <code>{winPsCommand}</code>
+                  <button 
+                    className={`btn-copy ${copiedOS === 'winps' ? 'copied' : ''}`}
+                    onClick={() => copyToClipboard(winPsCommand, 'winps')}
+                  >
+                    {copiedOS === 'winps' ? '✓ ¡Copiado!' : '📋 Copiar'}
                   </button>
                 </div>
               </div>
 
               {/* Linux / Mac Tab */}
               <div className="command-box-group">
-                <div className="os-badge">🐧 Linux / macOS</div>
+                <div className="os-badge">🐧 Linux / macOS / VPS</div>
                 <div className="command-snippet">
                   <code>{linuxCommand}</code>
                   <button 
