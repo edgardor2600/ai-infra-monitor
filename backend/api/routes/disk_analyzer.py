@@ -96,20 +96,34 @@ from backend.db.connection import get_db_connection
 
 
 @router.get("/drives", response_model=dict)
-async def get_drives(host_id: Optional[int] = 1):
+async def get_drives(host_id: Optional[int] = None, authorization: Optional[str] = Header(None)):
     """Get list of available disk drives and free space info for host using agent telemetry."""
+    org_id = get_current_org_id(authorization)
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT payload FROM metrics 
-            WHERE host_id = %s 
-            ORDER BY created_at DESC LIMIT 1
-            """,
-            (host_id or 1,)
-        )
+        
+        if host_id:
+            cursor.execute(
+                """
+                SELECT payload FROM metrics 
+                WHERE host_id = %s AND host_id IN (SELECT id FROM hosts WHERE org_id = %s)
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (host_id, org_id)
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT m.payload FROM metrics m
+                JOIN hosts h ON m.host_id = h.id
+                WHERE h.org_id = %s
+                ORDER BY m.created_at DESC LIMIT 1
+                """,
+                (org_id,)
+            )
+            
         row = cursor.fetchone()
         if row and row[0]:
             payload = row[0]
@@ -146,6 +160,12 @@ async def get_drives(host_id: Optional[int] = 1):
                     'percent_used': percent
                 }]
                 return {"drives": drives}
+
+        # Check if org has any hosts registered
+        cursor.execute("SELECT id FROM hosts WHERE org_id = %s LIMIT 1;", (org_id,))
+        if not cursor.fetchone():
+            return {"drives": []}
+
     except Exception as e:
         logger.warning(f"Error fetching host disk metrics from DB: {e}")
     finally:

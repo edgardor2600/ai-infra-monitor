@@ -152,11 +152,11 @@ const DiskAnalyzer = () => {
 
   // Phase 4 SaaS Tabs state
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'duplicates', 'dev_artifacts', 'audit_logs', 'license'
-  const [dupScanPath, setDupScanPath] = useState('C:\\Users\\EDGARDO\\Documents');
+  const [dupScanPath, setDupScanPath] = useState('C:\\Program Files');
   const [dupResults, setDupResults] = useState(null);
   const [dupLoading, setDupLoading] = useState(false);
 
-  const [devScanPath, setDevScanPath] = useState('C:\\Users\\EDGARDO\\Documents');
+  const [devScanPath, setDevScanPath] = useState('C:\\Program Files');
   const [devResults, setDevResults] = useState(null);
   const [devLoading, setDevLoading] = useState(false);
 
