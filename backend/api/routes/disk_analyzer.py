@@ -60,6 +60,37 @@ def get_current_org_id(authorization: Optional[str] = None) -> int:
     return 1
 
 
+def extract_metrics_dict_from_payload(payload) -> dict:
+    """Extract metric name-value pairs from telemetry payload (list or dict)."""
+    if not payload:
+        return {}
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            return {}
+            
+    metrics_dict = {}
+    samples = []
+    if isinstance(payload, list):
+        samples = payload
+    elif isinstance(payload, dict):
+        if 'samples' in payload and isinstance(payload['samples'], list):
+            samples = payload['samples']
+        elif 'metrics' in payload:
+            if isinstance(payload['metrics'], list):
+                samples = payload['metrics']
+            elif isinstance(payload['metrics'], dict):
+                return payload['metrics']
+
+    if isinstance(samples, list):
+        for item in samples:
+            if isinstance(item, dict) and 'metric' in item:
+                metrics_dict[item['metric']] = item.get('value')
+
+    return metrics_dict
+
+
 def check_license_permission(feature_name: str, authorization: Optional[str] = None):
     """Verify if active organization license tier has permission for feature_name."""
     org_id = get_current_org_id(authorization)
@@ -129,13 +160,7 @@ async def get_drives(host_id: Optional[int] = None, authorization: Optional[str]
         row = cursor.fetchone()
         if row and row[0]:
             payload = row[0]
-            metrics_dict = {}
-            if isinstance(payload, list):
-                for item in payload:
-                    if isinstance(item, dict) and 'metric' in item:
-                        metrics_dict[item['metric']] = item.get('value')
-            elif isinstance(payload, dict):
-                metrics_dict = payload.get('metrics', {})
+            metrics_dict = extract_metrics_dict_from_payload(payload)
 
             disk_total_gb = metrics_dict.get('disk_total_gb')
             disk_free_gb = metrics_dict.get('disk_free_gb')
@@ -211,6 +236,32 @@ def perform_scan_task(scan_id: int, host_id: int, drive: str = "C:"):
             
             categories_with_disk_info = agent_categories.copy()
             categories_with_disk_info['drive'] = drive
+
+            if 'disk_info' not in categories_with_disk_info or not isinstance(categories_with_disk_info.get('disk_info'), dict) or not categories_with_disk_info['disk_info'].get('total'):
+                cursor.execute(
+                    "SELECT payload FROM metrics_raw WHERE host_id = %s ORDER BY created_at DESC LIMIT 1",
+                    (host_id,)
+                )
+                mrow = cursor.fetchone()
+                if mrow and mrow[0]:
+                    m_dict = extract_metrics_dict_from_payload(mrow[0])
+                    dt_gb = m_dict.get('disk_total_gb')
+                    df_gb = m_dict.get('disk_free_gb')
+                    dp = m_dict.get('disk_percent')
+                    if dt_gb and df_gb:
+                        tot = int(float(dt_gb) * (1024 ** 3))
+                        fre = int(float(df_gb) * (1024 ** 3))
+                        usd = tot - fre
+                        pct = float(dp) if dp is not None else round((usd / tot) * 100, 2)
+                        categories_with_disk_info['disk_info'] = {
+                            "drive": drive,
+                            "device": drive,
+                            "total": tot,
+                            "used": usd,
+                            "free": fre,
+                            "used_percent": pct,
+                            "percent_used": pct
+                        }
             
             cursor.execute(
                 """
@@ -987,13 +1038,7 @@ async def get_scan(scan_id: int, authorization: Optional[str] = Header(None)):
                 mrow = cursor.fetchone()
                 if mrow and mrow[0]:
                     payload = mrow[0]
-                    metrics_dict = {}
-                    if isinstance(payload, list):
-                        for item in payload:
-                            if isinstance(item, dict) and 'metric' in item:
-                                metrics_dict[item['metric']] = item.get('value')
-                    elif isinstance(payload, dict):
-                        metrics_dict = payload.get('metrics', {})
+                    metrics_dict = extract_metrics_dict_from_payload(payload)
 
                     dt_gb = metrics_dict.get('disk_total_gb')
                     df_gb = metrics_dict.get('disk_free_gb')

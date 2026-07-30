@@ -204,19 +204,35 @@ class DiskScanner:
             conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT payload FROM metrics WHERE host_id = %s ORDER BY created_at DESC LIMIT 1",
+                "SELECT payload FROM metrics_raw WHERE host_id = %s ORDER BY created_at DESC LIMIT 1",
                 (self.host_id,)
             )
             row = cursor.fetchone()
             if row and row[0]:
                 payload = row[0]
+                if isinstance(payload, str):
+                    try:
+                        payload = json.loads(payload)
+                    except Exception:
+                        payload = {}
+                        
                 metrics_dict = {}
+                samples = []
                 if isinstance(payload, list):
-                    for item in payload:
+                    samples = payload
+                elif isinstance(payload, dict):
+                    if 'samples' in payload and isinstance(payload['samples'], list):
+                        samples = payload['samples']
+                    elif 'metrics' in payload:
+                        if isinstance(payload['metrics'], list):
+                            samples = payload['metrics']
+                        elif isinstance(payload['metrics'], dict):
+                            metrics_dict = payload['metrics']
+
+                if isinstance(samples, list):
+                    for item in samples:
                         if isinstance(item, dict) and 'metric' in item:
                             metrics_dict[item['metric']] = item.get('value')
-                elif isinstance(payload, dict):
-                    metrics_dict = payload.get('metrics', {})
 
                 disk_total_gb = metrics_dict.get('disk_total_gb')
                 disk_free_gb = metrics_dict.get('disk_free_gb')
