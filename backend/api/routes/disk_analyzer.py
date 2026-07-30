@@ -247,6 +247,7 @@ def perform_scan_task(scan_id: int, host_id: int, drive: str = "C:"):
             conn.commit()
             cursor.close()
             logger.info(f"Scan task completed using agent telemetry for host_id={host_id}")
+            return
         cursor.execute("SELECT hostname FROM hosts WHERE id = %s;", (host_id,))
         hrow = cursor.fetchone()
         local_hostname = socket.gethostname()
