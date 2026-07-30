@@ -104,3 +104,27 @@ async def test_minimax_llm_adapter():
             report = await adapter.analyze_disk_scan({"total_files": 10, "total_size_bytes": 1000})
             assert report["title"] == "Diagnóstico de Disco"
             assert "top_recommendations" in report
+
+
+def test_download_launcher_endpoint():
+    """Verify that download-launcher generates dynamic .bat file with user's org_id."""
+    from fastapi.testclient import TestClient
+    from backend.app.main import app
+    client = TestClient(app)
+    
+    response = client.get("/api/v1/disk-analyzer/download-launcher?os_type=windows")
+    assert response.status_code == 200
+    assert "iniciar_servidor_org_" in response.headers.get("content-disposition", "")
+    assert "@echo off" in response.text
+    assert "AGENT_ORG_ID=" in response.text
+
+
+def test_serve_agent_script():
+    """Verify that /agent/standalone_agent.py serves agent python code."""
+    from fastapi.testclient import TestClient
+    from backend.app.main import app
+    client = TestClient(app)
+    
+    response = client.get("/agent/standalone_agent.py")
+    assert response.status_code == 200
+    assert "StandaloneAgent" in response.text or "import os" in response.text

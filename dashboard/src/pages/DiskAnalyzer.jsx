@@ -169,6 +169,40 @@ const DiskAnalyzer = () => {
   const [licenseKeyInput, setLicenseKeyInput] = useState('');
   const [activatingLicense, setActivatingLicense] = useState(false);
 
+  // Server Launcher Modal state
+  const [showServerModal, setShowServerModal] = useState(false);
+  const [downloadingLauncher, setDownloadingLauncher] = useState(false);
+  const [copiedCommand, setCopiedCommand] = useState(false);
+
+  const handleDownloadLauncher = async (osType = 'windows') => {
+    setDownloadingLauncher(true);
+    try {
+      const response = await api.get(`/disk-analyzer/download-launcher?os_type=${osType}`, {
+        responseType: 'blob'
+      });
+      const ext = osType === 'windows' ? 'bat' : 'sh';
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      const orgId = licenseInfo?.organization_id || 1;
+      link.setAttribute('download', `iniciar_servidor_org_${orgId}.${ext}`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err) {
+      console.error('Error downloading launcher:', err);
+      alert('No se pudo descargar el lanzador automático.');
+    } finally {
+      setDownloadingLauncher(false);
+    }
+  };
+
+  const handleCopyCommand = (cmdText) => {
+    navigator.clipboard.writeText(cmdText);
+    setCopiedCommand(true);
+    setTimeout(() => setCopiedCommand(false), 2500);
+  };
+
   const togglePreview = (categoryName) => {
     setOpenPreviews(prev => ({ ...prev, [categoryName]: !prev[categoryName] }));
   };
@@ -1059,13 +1093,35 @@ const DiskAnalyzer = () => {
               </select>
             </div>
 
-            <button
-              className="btn-scan"
-              onClick={startScan}
-              disabled={loading || scanning}
-            >
-              {scanning ? 'Escaneando Disco...' : 'Iniciar Escaneo Completo'}
-            </button>
+            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+              <button
+                className="btn-scan"
+                onClick={startScan}
+                disabled={loading || scanning}
+              >
+                {scanning ? 'Escaneando Disco...' : 'Iniciar Escaneo Completo'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowServerModal(true)}
+                style={{
+                  background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '0.75rem 1.25rem',
+                  borderRadius: '8px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)'
+                }}
+              >
+                ⚡ Iniciar Servidor Local (.bat)
+              </button>
+            </div>
           </div>
 
           {currentScan && (
@@ -1519,6 +1575,119 @@ const DiskAnalyzer = () => {
                 disabled={cleanupInProgress}
               >
                 {cleanupInProgress ? 'Limpiando...' : `✅ Iniciar Limpieza (${formatBytes(cleanupModal.totalSize)})`}
+              </button>
+            </div>
+          </div>
+        </div>
+      {/* Server Launcher / Connection Modal */}
+      {showServerModal && (
+        <div className="purge-modal-overlay">
+          <div className="purge-modal-content" style={{ maxWidth: '650px', background: '#0f172a', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: '16px', padding: '1.75rem', color: '#f8fafc' }}>
+            <div className="purge-modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <span style={{ fontSize: '1.75rem' }}>🚀</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#f8fafc', fontWeight: 700 }}>Conectar Servidor de Monitoreo Local</h3>
+                  <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem', color: '#94a3b8' }}>Vincula tu computadora en 1 clic descargando el script ejecutable para tu cuenta.</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowServerModal(false)}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '1.5rem', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginBottom: '1.5rem' }}>
+              {/* Option 1: 1-Click BAT Launcher Download */}
+              <div style={{ background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(79, 70, 229, 0.1) 100%)', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: '12px', padding: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <h4 style={{ margin: 0, color: '#818cf8', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1rem' }}>
+                    <span>💻</span> Opción 1: Lanzador Automático (Windows .bat)
+                  </h4>
+                  <span style={{ background: '#4f46e5', color: 'white', padding: '0.2rem 0.6rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600 }}>Recomendado</span>
+                </div>
+                <p style={{ margin: '0 0 1rem 0', fontSize: '0.875rem', color: '#cbd5e1', lineHeight: '1.4' }}>
+                  Descarga el archivo <code>.bat</code> personalizado para tu organización (ID: {licenseInfo?.organization_id || 1}). Solo debes hacerle <strong>doble clic en tu equipo</strong> para encender el servidor de monitoreo.
+                </p>
+
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => handleDownloadLauncher('windows')}
+                    disabled={downloadingLauncher}
+                    style={{
+                      background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                      color: 'white',
+                      border: 'none',
+                      padding: '0.75rem 1.25rem',
+                      borderRadius: '8px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      fontSize: '0.9rem'
+                    }}
+                  >
+                    📥 {downloadingLauncher ? 'Generando Lanzador...' : 'Descargar Lanzador (.bat)'}
+                  </button>
+
+                  <button
+                    onClick={() => handleDownloadLauncher('bash')}
+                    disabled={downloadingLauncher}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.08)',
+                      color: '#e2e8f0',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      padding: '0.75rem 1rem',
+                      borderRadius: '8px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      fontSize: '0.85rem'
+                    }}
+                  >
+                    🐧 Descargar para Linux / macOS (.sh)
+                  </button>
+                </div>
+              </div>
+
+              {/* Instructions steps */}
+              <div style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '1rem' }}>
+                <h4 style={{ margin: '0 0 0.75rem 0', color: '#38bdf8', fontSize: '0.9rem' }}>📋 Pasos sencillos:</h4>
+                <ol style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.85rem', color: '#94a3b8', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <li>Haz clic en <strong>Descargar Lanzador (.bat)</strong> para guardar el ejecutable.</li>
+                  <li>Ve a tu carpeta de descargas o escritorio y haz <strong>doble clic</strong> sobre el archivo <code>iniciar_servidor_org_{licenseInfo?.organization_id || 1}.bat</code>.</li>
+                  <li>Se abrirá la consola de comandos activando la telemetría y el limpiador en vivo en tu cuenta.</li>
+                </ol>
+              </div>
+
+              {/* Option 2: Copy CLI command */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '1rem' }}>
+                <h4 style={{ margin: '0 0 0.5rem 0', color: '#94a3b8', fontSize: '0.875rem' }}>⌨️ Opción 2: Comando CLI para Consola CMD</h4>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input
+                    type="text"
+                    readOnly
+                    value={`set BACKEND_URL=https://ai-infra-monitor-api.onrender.com && set AGENT_ORG_ID=${licenseInfo?.organization_id || 1} && python -c "import urllib.request; urllib.request.urlretrieve('https://ai-infra-monitor-api.onrender.com/agent/standalone_agent.py', 'standalone_agent.py')" && python standalone_agent.py`}
+                    style={{ flexGrow: 1, padding: '0.5rem 0.75rem', background: '#020617', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '6px', color: '#38bdf8', fontFamily: 'monospace', fontSize: '0.75rem' }}
+                  />
+                  <button
+                    onClick={() => handleCopyCommand(`set BACKEND_URL=https://ai-infra-monitor-api.onrender.com && set AGENT_ORG_ID=${licenseInfo?.organization_id || 1} && python -c "import urllib.request; urllib.request.urlretrieve('https://ai-infra-monitor-api.onrender.com/agent/standalone_agent.py', 'standalone_agent.py')" && python standalone_agent.py`)}
+                    style={{ padding: '0.5rem 1rem', background: copiedCommand ? '#10b981' : '#334155', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
+                  >
+                    {copiedCommand ? '✓ ¡Copiado!' : '📋 Copiar'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowServerModal(false)}
+                style={{ padding: '0.6rem 1.25rem', background: 'rgba(255, 255, 255, 0.1)', color: '#e2e8f0', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
+              >
+                Cerrar
               </button>
             </div>
           </div>

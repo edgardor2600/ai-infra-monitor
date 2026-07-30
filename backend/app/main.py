@@ -82,6 +82,21 @@ app.include_router(dashboard_router, prefix="/api/v1", tags=["dashboard"])
 app.include_router(disk_analyzer_router, prefix="/api/v1", tags=["disk_analyzer"])
 app.include_router(auth_router, prefix="/api/v1", tags=["auth"])
 
+from fastapi.responses import Response
+
+@app.get("/agent/standalone_agent.py")
+async def serve_agent_script():
+    """Serve latest standalone_agent.py source code for automated agent downloaders."""
+    agent_path = os.path.join(os.path.dirname(__file__), "..", "..", "agent", "standalone_agent.py")
+    if not os.path.exists(agent_path):
+        agent_path = os.path.join(os.getcwd(), "agent", "standalone_agent.py")
+    
+    if os.path.exists(agent_path):
+        with open(agent_path, "r", encoding="utf-8") as f:
+            code = f.read()
+        return Response(content=code, media_type="text/plain")
+    return Response(content="# Agent source not found", status_code=404)
+
 
 async def check_db_connection() -> bool:
     """

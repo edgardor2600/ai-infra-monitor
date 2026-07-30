@@ -9,7 +9,7 @@ import json
 import socket
 import logging
 import psycopg2
-from fastapi import APIRouter, HTTPException, status, BackgroundTasks, Header
+from fastapi import APIRouter, HTTPException, status, BackgroundTasks, Header, Response
 from typing import Optional
 from dotenv import load_dotenv
 from datetime import datetime
@@ -1774,4 +1774,70 @@ async def get_task_status(task_id: int, authorization: Optional[str] = Header(No
         }
     finally:
         conn.close()
+
+
+@router.get("/download-launcher")
+async def download_launcher(os_type: str = "windows", authorization: Optional[str] = Header(None)):
+    """Generate and serve a customized 1-click launcher script (.bat or .sh) tailored for user's organization."""
+    org_id = get_current_org_id(authorization)
+    backend_url = os.getenv("BACKEND_URL", "https://ai-infra-monitor-api.onrender.com").rstrip("/")
+    
+    if os_type.lower() in ["linux", "macos", "bash"]:
+        content = f"""#!/bin/bash
+echo "========================================================"
+echo " 🚀 Iniciando Servidor de Monitoreo Local"
+echo "========================================================"
+export BACKEND_URL="{backend_url}"
+export AGENT_ORG_ID="{org_id}"
+
+curl -s "{backend_url}/agent/standalone_agent.py" -o standalone_agent.py || wget -q "{backend_url}/agent/standalone_agent.py" -O standalone_agent.py
+
+if [ ! -f standalone_agent.py ]; then
+    echo "[ERROR] No se pudo descargar standalone_agent.py. Verifica tu conexion a internet."
+    exit 1
+fi
+
+echo " ⚡ Ejecutando servidor de monitoreo en vivo (Org ID: {org_id})..."
+python3 standalone_agent.py
+"""
+        filename = f"iniciar_servidor_org_{org_id}.sh"
+        media_type = "application/x-sh"
+    else:
+        content = f"""@echo off
+title AI Infra Monitor - Servidor de Monitoreo Local
+color 0A
+echo ========================================================
+echo  🚀 Iniciando Servidor de Monitoreo Local
+echo ========================================================
+echo Conectando con la Organizacion ID: {org_id}...
+set BACKEND_URL={backend_url}
+set AGENT_ORG_ID={org_id}
+
+python -c "import urllib.request; urllib.request.urlretrieve('%BACKEND_URL%/agent/standalone_agent.py', 'standalone_agent.py')" 2>nul
+if not exist standalone_agent.py (
+    powershell -Command "Invoke-WebRequest -Uri '%BACKEND_URL%/agent/standalone_agent.py' -OutFile 'standalone_agent.py'" 2>nul
+)
+if not exist standalone_agent.py (
+    curl -s "%BACKEND_URL%/agent/standalone_agent.py" -o standalone_agent.py 2>nul
+)
+if not exist standalone_agent.py (
+    echo [ERROR] No se pudo descargar el agente de monitoreo. Verifica tu conexion a internet.
+    pause
+    exit /b 1
+)
+
+echo.
+echo  ⚡ Servidor activado con exito. Mantén esta ventana abierta.
+echo.
+python standalone_agent.py
+pause
+"""
+        filename = f"iniciar_servidor_org_{org_id}.bat"
+        media_type = "application/x-bat"
+
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
 
