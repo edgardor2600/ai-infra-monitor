@@ -5,7 +5,7 @@ Pydantic models for disk analyzer API endpoints.
 """
 
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from datetime import datetime
 
 
@@ -79,6 +79,16 @@ class RollbackRequest(BaseModel):
 class PurgeBackupRequest(BaseModel):
     """Request to purge a backup folder to free disk space."""
     backup_path: str = Field(..., description="Absolute path of the backup directory to purge")
+    scan_id: Optional[int] = Field(None, description="Optional scan ID associated with backup")
+
+
+class AgentTaskResultPayload(BaseModel):
+    """Payload sent by agent when completing a cleanup or purge task."""
+    task_id: int
+    host_id: int
+    status: str = Field("completed", description="Task status: completed or failed")
+    result: Dict[str, Any] = Field(default_factory=dict, description="Result dict with files_deleted, size_freed, errors")
+    disk_info: Optional[Dict[str, Any]] = Field(None, description="Fresh disk_info snapshot after cleanup")
 
 
 class AIAnalysisRequest(BaseModel):

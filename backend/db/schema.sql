@@ -135,6 +135,20 @@ CREATE TABLE scheduled_disk_cleanups (
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- Create cleanup_tasks table for remote agent task execution queue
+CREATE TABLE cleanup_tasks (
+    id SERIAL PRIMARY KEY,
+    host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+    org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    scan_id INTEGER REFERENCES disk_scans(id) ON DELETE CASCADE,
+    task_type VARCHAR(50) NOT NULL,
+    payload JSONB NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    result JSONB,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMP
+);
+
 -- Create indexes for disk analyzer tables
 CREATE INDEX idx_disk_scans_host_id ON disk_scans(host_id);
 CREATE INDEX idx_disk_scans_status ON disk_scans(status);
@@ -145,4 +159,5 @@ CREATE INDEX idx_cleanup_operations_status ON cleanup_operations(status);
 CREATE INDEX idx_cleanup_items_scan_id ON cleanup_items(scan_id);
 CREATE INDEX idx_cleanup_items_category ON cleanup_items(category);
 CREATE INDEX idx_scheduled_cleanups_host ON scheduled_disk_cleanups(host_id);
+CREATE INDEX idx_cleanup_tasks_host_status ON cleanup_tasks(host_id, status);
 CREATE INDEX idx_scheduled_cleanups_next_run ON scheduled_disk_cleanups(next_run_at);

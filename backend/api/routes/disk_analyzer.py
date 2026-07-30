@@ -18,6 +18,7 @@ from backend.api.routes.auth import decode_jwt_token
 from backend.api.models.disk_analyzer import (
     ScanRequest,
     AgentScanPayload,
+    AgentTaskResultPayload,
     ScanResponse,
     CleanupRequest,
     CleanupResponse,
@@ -561,12 +562,56 @@ async def analyze_scan_ai(request: AIAnalysisRequest):
 
 
 @router.post("/purge-backup", response_model=dict)
-async def purge_backup(request: PurgeBackupRequest):
+async def purge_backup(request: PurgeBackupRequest, authorization: Optional[str] = Header(None)):
     """Purge a backup folder to immediately free disk space."""
-    res = DiskCleaner.purge_backup_path(request.backup_path)
-    if not res.get('success'):
-        raise HTTPException(status_code=400, detail=res.get('message'))
-    return res
+    org_id = get_current_org_id(authorization)
+    
+    if os.path.exists(request.backup_path):
+        res = DiskCleaner.purge_backup_path(request.backup_path)
+        if not res.get('success'):
+            raise HTTPException(status_code=400, detail=res.get('message'))
+        return res
+
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+        
+    try:
+        cursor = conn.cursor()
+        host_id = 1
+        if request.scan_id:
+            cursor.execute("SELECT host_id FROM disk_scans WHERE id = %s AND org_id = %s", (request.scan_id, org_id))
+            hrow = cursor.fetchone()
+            if hrow:
+                host_id = hrow[0]
+        else:
+            cursor.execute("SELECT id FROM hosts WHERE org_id = %s ORDER BY created_at DESC LIMIT 1", (org_id,))
+            hrow = cursor.fetchone()
+            if hrow:
+                host_id = hrow[0]
+
+        payload = {"backup_path": request.backup_path, "scan_id": request.scan_id}
+        cursor.execute(
+            """
+            INSERT INTO cleanup_tasks (host_id, org_id, scan_id, task_type, payload, status)
+            VALUES (%s, %s, %s, 'purge_backup', %s, 'pending')
+            RETURNING id
+            """,
+            (host_id, org_id, request.scan_id, json.dumps(payload))
+        )
+        task_id = cursor.fetchone()[0]
+        conn.commit()
+        cursor.close()
+        
+        return {
+            "ok": True,
+            "success": True,
+            "task_id": task_id,
+            "status": "pending",
+            "message": "Solicitud de liberación de resguardo enviada al agente del equipo."
+        }
+    finally:
+        conn.close()
 
 
 @router.post("/inspect-backup", response_model=dict)
@@ -1214,32 +1259,67 @@ async def perform_cleanup(request: CleanupRequest, authorization: Optional[str] 
         operation_id = cursor.fetchone()[0]
         conn.commit()
         
-        # Perform cleanup
-        cleaner = DiskCleaner(host_id, request.scan_id)
-        cleanup_results = cleaner.cleanup_categories(
-            request.categories,
-            files_by_category,
-            request.create_backup
-        )
-        
-        # Update cleanup operation
-        cursor.execute(
-            """
-            UPDATE cleanup_operations
-            SET status = 'completed',
-                total_files_deleted = %s,
-                total_size_freed_bytes = %s,
-                backup_path = %s,
-                completed_at = NOW()
-            WHERE id = %s
-            """,
-            (
-                cleanup_results['files_deleted'],
-                cleanup_results['size_freed'],
-                cleanup_results.get('backup_path'),
-                operation_id
+        cursor.execute("SELECT hostname FROM hosts WHERE id = %s;", (host_id,))
+        hrow = cursor.fetchone()
+        local_hostname = socket.gethostname()
+        is_local = (hrow and hrow[0] == local_hostname)
+
+        if is_local:
+            cleaner = DiskCleaner(host_id, request.scan_id)
+            cleanup_results = cleaner.cleanup_categories(
+                request.categories,
+                files_by_category,
+                request.create_backup
             )
-        )
+            
+            cursor.execute(
+                """
+                UPDATE cleanup_operations
+                SET status = 'completed',
+                    total_files_deleted = %s,
+                    total_size_freed_bytes = %s,
+                    backup_path = %s,
+                    completed_at = NOW()
+                WHERE id = %s
+                """,
+                (
+                    cleanup_results['files_deleted'],
+                    cleanup_results['size_freed'],
+                    cleanup_results.get('backup_path'),
+                    operation_id
+                )
+            )
+        else:
+            task_payload = {
+                "categories": request.categories,
+                "create_backup": request.create_backup,
+                "files_by_category": files_by_category
+            }
+            cursor.execute(
+                """
+                INSERT INTO cleanup_tasks (host_id, org_id, scan_id, task_type, payload, status)
+                VALUES (%s, %s, %s, 'cleanup_categories', %s, 'pending')
+                RETURNING id
+                """,
+                (host_id, org_id, request.scan_id, json.dumps(task_payload))
+            )
+            task_id = cursor.fetchone()[0]
+            conn.commit()
+            cursor.close()
+            
+            return {
+                "operation_id": operation_id,
+                "scan_id": request.scan_id,
+                "task_id": task_id,
+                "status": "pending",
+                "files_deleted": 0,
+                "size_freed": 0,
+                "backup_path": None,
+                "errors": [],
+                "message": "Solicitud de limpieza encolada para ejecución remota en el agente del equipo.",
+                "started_at": datetime.now().isoformat(),
+                "completed_at": None
+            }
         
         # Insert B2B Audit Log
         try:
@@ -1534,6 +1614,164 @@ async def delete_scheduled_cleanup(schedule_id: int, authorization: Optional[str
         
         conn.commit()
         return {"ok": True, "schedule_id": schedule_id, "message": "Programación eliminada con éxito."}
+    finally:
+        conn.close()
+
+
+@router.get("/pending-tasks", response_model=dict)
+async def get_pending_tasks(host_id: int, authorization: Optional[str] = Header(None)):
+    """Agent polling endpoint: Retrieve pending cleanup / purge tasks for host."""
+    org_id = get_current_org_id(authorization)
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+        
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, task_type, payload, scan_id
+            FROM cleanup_tasks
+            WHERE host_id = %s AND org_id = %s AND status = 'pending'
+            ORDER BY created_at ASC
+            """,
+            (host_id, org_id)
+        )
+        rows = cursor.fetchall()
+        tasks = []
+        for r in rows:
+            p = r[2]
+            if isinstance(p, str):
+                try:
+                    p = json.loads(p)
+                except Exception:
+                    p = {}
+            tasks.append({
+                "task_id": r[0],
+                "task_type": r[1],
+                "payload": p,
+                "scan_id": r[3]
+            })
+            
+        for t in tasks:
+            cursor.execute("UPDATE cleanup_tasks SET status = 'in_progress' WHERE id = %s", (t["task_id"],))
+        conn.commit()
+        return {"ok": True, "tasks": tasks}
+    finally:
+        conn.close()
+
+
+@router.post("/task-result", response_model=dict)
+async def receive_task_result(payload: AgentTaskResultPayload):
+    """Agent reporting endpoint: Receive execution results for a cleanup or purge task."""
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+        
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT host_id, org_id, scan_id, task_type FROM cleanup_tasks WHERE id = %s", (payload.task_id,))
+        trow = cursor.fetchone()
+        if not trow:
+            raise HTTPException(status_code=404, detail="Task not found")
+            
+        host_id, org_id, scan_id, task_type = trow[0], trow[1], trow[2], trow[3]
+        
+        cursor.execute(
+            """
+            UPDATE cleanup_tasks
+            SET status = %s,
+                result = %s,
+                completed_at = NOW()
+            WHERE id = %s
+            """,
+            (payload.status, json.dumps(payload.result), payload.task_id)
+        )
+        
+        files_deleted = payload.result.get('files_deleted', 0)
+        size_freed = payload.result.get('size_freed', 0)
+        backup_path = payload.result.get('backup_path')
+        
+        if files_deleted > 0 or size_freed > 0 or backup_path:
+            try:
+                cursor.execute(
+                    """
+                    INSERT INTO cleanup_audit_logs 
+                    (org_id, host_id, categories, files_deleted_count, bytes_freed, backup_path, ai_provider, ai_analysis_summary)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        org_id,
+                        host_id,
+                        payload.result.get('categories', ['remote_cleanup']),
+                        files_deleted,
+                        size_freed,
+                        backup_path,
+                        "MiniMax AI",
+                        f"Ejecución remota exitosa en agente (Host {host_id}): {files_deleted} archivos eliminados, {DiskCleaner._format_size(size_freed)} liberados."
+                    )
+                )
+            except Exception as audit_err:
+                logger.warning(f"Error creating audit log for task {payload.task_id}: {audit_err}")
+
+        if payload.disk_info and scan_id:
+            cursor.execute("SELECT categories FROM disk_scans WHERE id = %s", (scan_id,))
+            srow = cursor.fetchone()
+            if srow and srow[0]:
+                categories = srow[0]
+                if isinstance(categories, str):
+                    try:
+                        categories = json.loads(categories)
+                    except Exception:
+                        categories = {}
+                categories['disk_info'] = payload.disk_info
+                cursor.execute(
+                    "UPDATE disk_scans SET categories = %s WHERE id = %s",
+                    (json.dumps(categories), scan_id)
+                )
+
+        conn.commit()
+        return {"ok": True, "task_id": payload.task_id, "status": payload.status}
+    finally:
+        conn.close()
+
+
+@router.get("/task-status/{task_id}", response_model=dict)
+async def get_task_status(task_id: int, authorization: Optional[str] = Header(None)):
+    """Dashboard polling endpoint: Check task execution status."""
+    org_id = get_current_org_id(authorization)
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+        
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, status, result, completed_at
+            FROM cleanup_tasks
+            WHERE id = %s AND org_id = %s
+            """,
+            (task_id, org_id)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Task not found")
+            
+        result_data = row[2]
+        if isinstance(result_data, str):
+            try:
+                result_data = json.loads(result_data)
+            except Exception:
+                result_data = {}
+                
+        return {
+            "ok": True,
+            "task_id": row[0],
+            "status": row[1],
+            "result": result_data or {},
+            "completed_at": row[3].isoformat() if row[3] else None
+        }
     finally:
         conn.close()
 

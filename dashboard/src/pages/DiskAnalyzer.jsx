@@ -435,14 +435,40 @@ const DiskAnalyzer = () => {
     }
   };
 
+  const pollTaskCompletion = async (taskId) => {
+    let attempts = 0;
+    const maxAttempts = 20;
+    while (attempts < maxAttempts) {
+      await new Promise(r => setTimeout(r, 2000));
+      attempts++;
+      try {
+        const res = await api.get(`/disk-analyzer/task-status/${taskId}`);
+        if (res.data.status === 'completed' || res.data.status === 'completed_with_warnings') {
+          return res.data;
+        } else if (res.data.status === 'failed') {
+          throw new Error('La tarea falló en el equipo remoto.');
+        }
+      } catch (err) {
+        if (attempts >= maxAttempts) break;
+      }
+    }
+  };
+
   const handleConfirmPurge = async () => {
     if (!purgeModal.item) return;
     try {
       const response = await api.post('/disk-analyzer/purge-backup', {
-        backup_path: purgeModal.item.backup_path
+        backup_path: purgeModal.item.backup_path,
+        scan_id: currentScan?.scan_id
       });
-      if (response.data.success) {
+      if (response.data.success || response.data.ok) {
+        if (response.data.task_id) {
+          await pollTaskCompletion(response.data.task_id);
+        }
         setPurgeModal({ isOpen: false, item: null, loading: false, aiAnalysis: null, backupInfo: null });
+        if (currentScan?.scan_id) {
+          await fetchScanDetails(currentScan.scan_id);
+        }
         await fetchCleanupHistory();
       }
     } catch (error) {
@@ -519,7 +545,10 @@ const DiskAnalyzer = () => {
         create_backup: true
       });
 
-      if (response.data.ok) {
+      if (response.data.ok || response.data.task_id) {
+        if (response.data.task_id) {
+          await pollTaskCompletion(response.data.task_id);
+        }
         await fetchScanDetails(currentScan.scan_id);
         await fetchScans();
         await fetchCleanupHistory();

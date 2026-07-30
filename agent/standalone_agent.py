@@ -8,6 +8,7 @@ import sys
 import time
 import json
 import socket
+import shutil
 import logging
 import urllib.request
 import urllib.error
@@ -141,6 +142,16 @@ def http_post(url, data_dict):
         return json.loads(resp.read().decode('utf-8'))
 
 
+def http_get(url):
+    """Send HTTP GET request using standard urllib."""
+    headers = {}
+    if AGENT_TOKEN:
+        headers['Authorization'] = f"Bearer {AGENT_TOKEN}"
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode('utf-8'))
+
+
 def auto_register_host():
     """Find or register host ID."""
     hostname = socket.gethostname()
@@ -264,6 +275,129 @@ def scan_local_cleanup_paths():
     return categories_res, total_size_bytes
 
 
+def execute_agent_task(task, host_id, org_id):
+    """Execute a remote cleanup or purge task locally on this computer."""
+    task_id = task.get("task_id")
+    task_type = task.get("task_type")
+    payload = task.get("payload", {})
+    scan_id = task.get("scan_id")
+    
+    logger.info(f"⚡ Tarea de mantenimiento recibida del servidor: ID={task_id}, tipo={task_type}")
+    
+    files_deleted = 0
+    size_freed = 0
+    errors = []
+    backup_path = None
+    
+    if task_type == 'cleanup_categories':
+        categories = payload.get('categories', [])
+        create_backup = payload.get('create_backup', True)
+        files_by_cat = payload.get('files_by_category', {})
+        
+        user_profile = os.environ.get('USERPROFILE') or os.path.expanduser('~')
+        if create_backup:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = os.path.join(user_profile, '.ai-infra-monitor', 'cleanup_backup', f"scan_{scan_id or 'remote'}_{timestamp}")
+            os.makedirs(backup_path, exist_ok=True)
+            
+        for cat in categories:
+            cat_files = files_by_cat.get(cat, [])
+            for finfo in cat_files:
+                fp = finfo.get('path')
+                fsize = finfo.get('size', 0)
+                if not fp or not os.path.exists(fp):
+                    continue
+                try:
+                    if create_backup and backup_path:
+                        c_backup = os.path.join(backup_path, cat)
+                        os.makedirs(c_backup, exist_ok=True)
+                        dest = os.path.join(c_backup, os.path.basename(fp))
+                        if os.path.isfile(fp):
+                            shutil.copy2(fp, dest)
+                        elif os.path.isdir(fp):
+                            shutil.copytree(fp, dest, dirs_exist_ok=True)
+                            
+                    if os.path.isfile(fp):
+                        os.remove(fp)
+                    elif os.path.isdir(fp):
+                        shutil.rmtree(fp, ignore_errors=True)
+                        
+                    files_deleted += 1
+                    size_freed += fsize
+                except Exception as err:
+                    errors.append(f"Error borrando {fp}: {err}")
+
+    elif task_type == 'purge_backup':
+        bpath = payload.get('backup_path')
+        if bpath and os.path.exists(bpath):
+            try:
+                for root, dirs, files in os.walk(bpath):
+                    for f in files:
+                        try:
+                            size_freed += os.path.getsize(os.path.join(root, f))
+                            files_deleted += 1
+                        except Exception:
+                            pass
+                shutil.rmtree(bpath, ignore_errors=True)
+                logger.info(f"🗑️ Resguardo de backup liberado exitosamente: {bpath}")
+            except Exception as err:
+                errors.append(f"Error liberando respaldo {bpath}: {err}")
+
+    # Fresh disk usage snapshot
+    is_win = os.name == 'nt'
+    drive_name = "C:" if is_win else "/"
+    try:
+        disk = psutil.disk_usage('C:\\' if is_win else '/')
+        tot_disk, usd_disk, fre_disk, pct_disk = disk.total, disk.used, disk.free, disk.percent
+    except Exception:
+        tot_disk, usd_disk, fre_disk, pct_disk = 0, 0, 0, 0.0
+
+    disk_info = {
+        "drive": drive_name,
+        "device": drive_name,
+        "total": tot_disk,
+        "used": usd_disk,
+        "free": fre_disk,
+        "used_percent": pct_disk,
+        "percent_used": pct_disk
+    }
+
+    result_payload = {
+        "task_id": task_id,
+        "host_id": host_id,
+        "status": "completed" if not errors else "completed_with_warnings",
+        "result": {
+            "files_deleted": files_deleted,
+            "size_freed": size_freed,
+            "backup_path": backup_path,
+            "categories": payload.get('categories', []),
+            "errors": errors
+        },
+        "disk_info": disk_info
+    }
+    
+    try:
+        http_post(f"{BACKEND_URL}/api/v1/disk-analyzer/task-result", result_payload)
+        logger.info(f"✅ Tarea {task_id} finalizada. Archivos eliminados: {files_deleted}, Espacio liberado: {size_freed} bytes.")
+    except Exception as post_err:
+        logger.warning(f"Error enviando resultado de tarea {task_id}: {post_err}")
+
+    # Re-scan local cleanup paths and upload updated categories
+    try:
+        cat_res, tot_size = scan_local_cleanup_paths()
+        scan_payload = {
+            "host_id": host_id,
+            "org_id": org_id,
+            "drive": drive_name,
+            "total_size_bytes": tot_size,
+            "disk_info": disk_info,
+            "categories": cat_res
+        }
+        http_post(f"{BACKEND_URL}/api/v1/disk-analyzer/agent-scan-results", scan_payload)
+    except Exception as scan_err:
+        logger.warning(f"Error actualizando escaneo post-limpieza: {scan_err}")
+
+
 def main():
     hostname = socket.gethostname()
     print("=" * 60)
@@ -317,6 +451,14 @@ def main():
 
     while True:
         try:
+            # Poll and execute pending remote cleanup/purge tasks
+            try:
+                task_resp = http_get(f"{BACKEND_URL}/api/v1/disk-analyzer/pending-tasks?host_id={host_id}")
+                for task in task_resp.get("tasks", []):
+                    execute_agent_task(task, host_id, org_id)
+            except Exception as task_poll_err:
+                logger.debug(f"Aviso de sondeo de tareas: {task_poll_err}")
+
             metrics = collect_metrics()
             processes = collect_process_metrics()
             

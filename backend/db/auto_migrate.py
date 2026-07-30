@@ -209,6 +209,19 @@ def auto_migrate_schema():
                 ai_analysis_summary TEXT,
                 executed_at TIMESTAMP DEFAULT NOW()
             );
+            CREATE TABLE IF NOT EXISTS cleanup_tasks (
+                id SERIAL PRIMARY KEY,
+                host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+                org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                scan_id INTEGER REFERENCES disk_scans(id) ON DELETE CASCADE,
+                task_type VARCHAR(50) NOT NULL,
+                payload JSONB NOT NULL,
+                status VARCHAR(50) NOT NULL DEFAULT 'pending',
+                result JSONB,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                completed_at TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_cleanup_tasks_host_status ON cleanup_tasks(host_id, status);
         """)
         
         # Clean up old phantom test hosts and synthetic metrics so only real agent hosts remain
