@@ -181,14 +181,19 @@ const DiskAnalyzer = () => {
         responseType: 'blob'
       });
       const ext = osType === 'windows' ? 'bat' : 'sh';
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const mimeType = osType === 'windows' ? 'application/x-bat' : 'application/x-sh';
+      const blob = new Blob([response.data], { type: mimeType });
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       const orgId = licenseInfo?.organization_id || 1;
       link.setAttribute('download', `iniciar_servidor_org_${orgId}.${ext}`);
       document.body.appendChild(link);
       link.click();
-      link.remove();
+      setTimeout(() => {
+        link.remove();
+        window.URL.revokeObjectURL(url);
+      }, 1000);
     } catch (err) {
       console.error('Error downloading launcher:', err);
       alert('No se pudo descargar el lanzador automático.');
@@ -1583,8 +1588,8 @@ const DiskAnalyzer = () => {
 
       {/* Server Launcher / Connection Modal */}
       {showServerModal && (
-        <div className="purge-modal-overlay">
-          <div className="purge-modal-content" style={{ maxWidth: '650px', background: '#0f172a', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: '16px', padding: '1.75rem', color: '#f8fafc' }}>
+        <div className="modal-overlay" onClick={() => setShowServerModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '650px', background: '#0f172a', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: '16px', padding: '1.75rem', color: '#f8fafc' }}>
             <div className="purge-modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '1rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                 <span style={{ fontSize: '1.75rem' }}>🚀</span>
