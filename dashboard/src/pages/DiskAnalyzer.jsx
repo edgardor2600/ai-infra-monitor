@@ -1579,6 +1579,8 @@ const DiskAnalyzer = () => {
             </div>
           </div>
         </div>
+      )}
+
       {/* Server Launcher / Connection Modal */}
       {showServerModal && (
         <div className="purge-modal-overlay">
