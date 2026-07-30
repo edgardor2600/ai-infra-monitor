@@ -74,7 +74,7 @@ async def register_host(payload: Dict[str, Any], authorization: Optional[str] = 
             """
             INSERT INTO hosts (hostname, org_id)
             VALUES (%s, %s)
-            ON CONFLICT (hostname) DO UPDATE SET org_id = EXCLUDED.org_id
+            ON CONFLICT (hostname, org_id) DO UPDATE SET hostname = EXCLUDED.hostname
             RETURNING id, hostname, org_id;
             """,
             (hostname, org_id)

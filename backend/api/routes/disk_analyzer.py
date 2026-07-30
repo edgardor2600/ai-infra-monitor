@@ -6,6 +6,7 @@ This module provides endpoints for disk analysis and cleanup operations.
 
 import os
 import json
+import socket
 import logging
 import psycopg2
 from fastapi import APIRouter, HTTPException, status, BackgroundTasks, Header
@@ -108,7 +109,7 @@ async def get_drives(host_id: Optional[int] = None, authorization: Optional[str]
         if host_id:
             cursor.execute(
                 """
-                SELECT payload FROM metrics 
+                SELECT payload FROM metrics_raw 
                 WHERE host_id = %s AND host_id IN (SELECT id FROM hosts WHERE org_id = %s)
                 ORDER BY created_at DESC LIMIT 1
                 """,
@@ -117,7 +118,7 @@ async def get_drives(host_id: Optional[int] = None, authorization: Optional[str]
         else:
             cursor.execute(
                 """
-                SELECT m.payload FROM metrics m
+                SELECT m.payload FROM metrics_raw m
                 JOIN hosts h ON m.host_id = h.id
                 WHERE h.org_id = %s
                 ORDER BY m.created_at DESC LIMIT 1
@@ -246,10 +247,30 @@ def perform_scan_task(scan_id: int, host_id: int, drive: str = "C:"):
             conn.commit()
             cursor.close()
             logger.info(f"Scan task completed using agent telemetry for host_id={host_id}")
+        cursor.execute("SELECT hostname FROM hosts WHERE id = %s;", (host_id,))
+        hrow = cursor.fetchone()
+        local_hostname = socket.gethostname()
+        if hrow and hrow[0] == local_hostname:
+            scanner = DiskScanner(host_id, drive=drive)
+            scan_results = scanner.scan_all_categories()
+        else:
+            logger.info(f"Host ID {host_id} ({hrow[0] if hrow else 'desconocido'}) es remoto. Esperando telemetría del agente...")
+            cursor.execute(
+                """
+                UPDATE disk_scans 
+                SET status = 'failed',
+                    error_message = %s,
+                    completed_at = NOW()
+                WHERE id = %s
+                """,
+                (
+                    "Esperando datos del agente remoto. Por favor ejecuta 'python agent/standalone_agent.py' en el equipo destino.",
+                    scan_id
+                )
+            )
+            conn.commit()
+            cursor.close()
             return
-        
-        scanner = DiskScanner(host_id, drive=drive)
-        scan_results = scanner.scan_all_categories()
         
         categories_with_disk_info = scan_results['categories'].copy()
         categories_with_disk_info['disk_info'] = scan_results.get('disk_info', {})
@@ -377,6 +398,8 @@ async def receive_agent_scan_results(payload: AgentScanPayload):
 
         categories_with_disk_info = payload.categories.copy()
         categories_with_disk_info['drive'] = payload.drive
+        if payload.disk_info:
+            categories_with_disk_info['disk_info'] = payload.disk_info
 
         cursor.execute(
             """
@@ -957,7 +980,7 @@ async def get_scan(scan_id: int, authorization: Optional[str] = Header(None)):
             try:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT payload FROM metrics WHERE host_id = %s ORDER BY created_at DESC LIMIT 1",
+                    "SELECT payload FROM metrics_raw WHERE host_id = %s ORDER BY created_at DESC LIMIT 1",
                     (host_id,)
                 )
                 mrow = cursor.fetchone()

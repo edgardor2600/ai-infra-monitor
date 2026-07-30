@@ -12,8 +12,10 @@ DROP TABLE IF EXISTS hosts CASCADE;
 -- Create hosts table
 CREATE TABLE hosts (
     id SERIAL PRIMARY KEY,
-    hostname TEXT NOT NULL UNIQUE,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    org_id INTEGER DEFAULT 1,
+    hostname TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    CONSTRAINT hosts_hostname_org_id_key UNIQUE (hostname, org_id)
 );
 
 -- Create metrics table

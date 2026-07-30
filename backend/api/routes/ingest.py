@@ -8,9 +8,11 @@ import os
 import json
 import logging
 import psycopg2
-from fastapi import APIRouter, HTTPException, status
+from typing import Optional
+from fastapi import APIRouter, HTTPException, status, Header
 from dotenv import load_dotenv
 from backend.api.models.ingest import IngestBatch
+from backend.api.routes.hosts import get_current_org_id
 
 # Load environment variables
 load_dotenv()
@@ -26,7 +28,7 @@ from backend.db.connection import get_db_connection
 
 
 @router.post("/metrics")
-async def ingest_metrics(batch: IngestBatch):
+async def ingest_metrics(batch: IngestBatch, authorization: Optional[str] = Header(None)):
     """
     Ingest a batch of metrics from a host.
     
@@ -56,29 +58,30 @@ async def ingest_metrics(batch: IngestBatch):
         
         # If hostname is provided, resolve the correct host_id from the DB
         # This handles the case where the agent falls back to host_id=1 but the real host has a different id
+        org_id = get_current_org_id(authorization)
         resolved_host_id = batch.host_id
         if batch.hostname:
             cursor.execute(
-                "SELECT id FROM hosts WHERE hostname = %s LIMIT 1",
-                (batch.hostname,)
+                "SELECT id FROM hosts WHERE hostname = %s AND org_id = %s LIMIT 1",
+                (batch.hostname, org_id)
             )
             row = cursor.fetchone()
             if row:
                 resolved_host_id = row[0]
-                logger.info(f"Resolved hostname '{batch.hostname}' to host_id={resolved_host_id}")
+                logger.info(f"Resolved hostname '{batch.hostname}' (org_id={org_id}) to host_id={resolved_host_id}")
             else:
-                # Auto-register this hostname
+                # Auto-register this hostname under current org_id
                 cursor.execute(
                     """
                     INSERT INTO hosts (hostname, org_id)
-                    VALUES (%s, 1)
-                    ON CONFLICT (hostname) DO UPDATE SET hostname = EXCLUDED.hostname
+                    VALUES (%s, %s)
+                    ON CONFLICT (hostname, org_id) DO UPDATE SET hostname = EXCLUDED.hostname
                     RETURNING id
                     """,
-                    (batch.hostname,)
+                    (batch.hostname, org_id)
                 )
                 resolved_host_id = cursor.fetchone()[0]
-                logger.info(f"Auto-registered hostname '{batch.hostname}' as host_id={resolved_host_id}")
+                logger.info(f"Auto-registered hostname '{batch.hostname}' as host_id={resolved_host_id} (org_id={org_id})")
         
         # Insert into metrics_raw table using resolved host_id
         cursor.execute(

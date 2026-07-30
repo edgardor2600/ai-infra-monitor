@@ -123,13 +123,19 @@ def collect_process_metrics():
         return []
 
 
+AGENT_TOKEN = os.getenv("AGENT_TOKEN") or os.getenv("AGENT_ORG_KEY") or os.getenv("API_KEY")
+
+
 def http_post(url, data_dict):
     """Send JSON payload using standard urllib."""
     json_bytes = json.dumps(data_dict).encode('utf-8')
+    headers = {'Content-Type': 'application/json'}
+    if AGENT_TOKEN:
+        headers['Authorization'] = f"Bearer {AGENT_TOKEN}"
     req = urllib.request.Request(
         url,
         data=json_bytes,
-        headers={'Content-Type': 'application/json'}
+        headers=headers
     )
     with urllib.request.urlopen(req, timeout=10) as resp:
         return json.loads(resp.read().decode('utf-8'))
@@ -139,7 +145,10 @@ def auto_register_host():
     """Find or register host ID."""
     hostname = socket.gethostname()
     try:
-        req = urllib.request.Request(f"{BACKEND_URL}/api/v1/hosts")
+        headers = {}
+        if AGENT_TOKEN:
+            headers['Authorization'] = f"Bearer {AGENT_TOKEN}"
+        req = urllib.request.Request(f"{BACKEND_URL}/api/v1/hosts", headers=headers)
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode('utf-8'))
             for host in data.get("hosts", []):
@@ -149,10 +158,11 @@ def auto_register_host():
         # Register via POST if not found
         org_id = int(os.getenv("AGENT_ORG_ID", "1"))
         reg_payload = json.dumps({"hostname": hostname, "org_id": org_id}).encode('utf-8')
+        headers['Content-Type'] = 'application/json'
         reg_req = urllib.request.Request(
             f"{BACKEND_URL}/api/v1/hosts/register",
             data=reg_payload,
-            headers={'Content-Type': 'application/json'}
+            headers=headers
         )
         with urllib.request.urlopen(reg_req, timeout=10) as reg_resp:
             reg_data = json.loads(reg_resp.read().decode('utf-8'))
@@ -270,15 +280,38 @@ def main():
         logger.info("Realizando escaneo local de disco inicial en el equipo...")
         cat_res, tot_size = scan_local_cleanup_paths()
         org_id = int(os.getenv("AGENT_ORG_ID", "1"))
+        
+        is_win = os.name == 'nt'
+        drive_name = "C:" if is_win else "/"
+        try:
+            disk = psutil.disk_usage('C:\\' if is_win else '/')
+            tot_disk = disk.total
+            usd_disk = disk.used
+            fre_disk = disk.free
+            pct_disk = disk.percent
+        except Exception:
+            tot_disk, usd_disk, fre_disk, pct_disk = 0, 0, 0, 0.0
+
+        disk_info = {
+            "drive": drive_name,
+            "device": drive_name,
+            "total": tot_disk,
+            "used": usd_disk,
+            "free": fre_disk,
+            "used_percent": pct_disk,
+            "percent_used": pct_disk
+        }
+
         scan_payload = {
             "host_id": host_id,
             "org_id": org_id,
-            "drive": "C:" if os.name == 'nt' else "/",
+            "drive": drive_name,
             "total_size_bytes": tot_size,
+            "disk_info": disk_info,
             "categories": cat_res
         }
         http_post(f"{BACKEND_URL}/api/v1/disk-analyzer/agent-scan-results", scan_payload)
-        logger.info(f"🔍 Escaneo de disco enviado con éxito: {tot_size} bytes en categorías reales.")
+        logger.info(f"🔍 Escaneo de disco enviado con éxito: {tot_size} bytes en categorías reales (Disco {drive_name}: {pct_disk}% usado).")
     except Exception as e:
         logger.warning(f"No se pudo enviar escaneo inicial de disco: {e}")
 

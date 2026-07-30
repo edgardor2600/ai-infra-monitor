@@ -21,6 +21,7 @@ class AgentScanPayload(BaseModel):
     org_id: int = Field(1, description="Organization ID")
     drive: str = Field("C:", description="Target drive letter")
     total_size_bytes: int = Field(..., description="Total size in bytes")
+    disk_info: Optional[Dict] = Field(None, description="Global disk capacity info (total, used, free, percent_used)")
     categories: Dict[str, Dict] = Field(..., description="Scan categories with files and sizes")
 
 

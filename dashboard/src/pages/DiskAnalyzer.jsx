@@ -1061,25 +1061,25 @@ const DiskAnalyzer = () => {
                   <div className="disk-stats">
                     <div className="disk-stat">
                       <span className="disk-label">Total</span>
-                      <span className="disk-value">{formatBytes(currentScan.disk_info.total)}</span>
+                      <span className="disk-value">{formatBytes(currentScan.disk_info.total || 0)}</span>
                     </div>
                     <div className="disk-stat">
                       <span className="disk-label">Usado</span>
-                      <span className="disk-value">{formatBytes(currentScan.disk_info.used)}</span>
+                      <span className="disk-value">{formatBytes(currentScan.disk_info.used || 0)}</span>
                     </div>
                     <div className="disk-stat">
                       <span className="disk-label">Libre</span>
-                      <span className="disk-value free">{formatBytes(currentScan.disk_info.free)}</span>
+                      <span className="disk-value free">{formatBytes(currentScan.disk_info.free || 0)}</span>
                     </div>
                   </div>
                   <div className="disk-progress-bar">
                     <div
                       className="disk-progress-fill"
-                      style={{ width: `${currentScan.disk_info.percent_used}%` }}
+                      style={{ width: `${currentScan.disk_info.percent_used ?? currentScan.disk_info.used_percent ?? 0}%` }}
                     ></div>
                   </div>
                   <div className="disk-progress-label">
-                    {currentScan.disk_info.percent_used}% Usado
+                    {currentScan.disk_info.percent_used ?? currentScan.disk_info.used_percent ?? 0}% Usado
                   </div>
                 </div>
               )}

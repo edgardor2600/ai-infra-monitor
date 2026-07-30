@@ -49,10 +49,18 @@ def auto_migrate_schema():
             CREATE TABLE IF NOT EXISTS hosts (
                 id SERIAL PRIMARY KEY,
                 org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE DEFAULT 1,
-                hostname TEXT NOT NULL UNIQUE,
+                hostname TEXT NOT NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT NOW()
             );
-            -- Hosts are auto-registered when agents connect; no seed needed here.
+            ALTER TABLE hosts DROP CONSTRAINT IF EXISTS hosts_hostname_key;
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'hosts_hostname_org_id_key'
+                ) THEN
+                    ALTER TABLE hosts ADD CONSTRAINT hosts_hostname_org_id_key UNIQUE (hostname, org_id);
+                END IF;
+            END $$;
         """)
         
         # 4. Metrics & Raw Metrics
