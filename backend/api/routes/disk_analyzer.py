@@ -219,111 +219,126 @@ def perform_scan_task(scan_id: int, host_id: int, drive: str = "C:"):
         )
         conn.commit()
 
-        # Check if agent scan results exist for this host
-        cursor.execute(
-            """
-            SELECT categories, total_size_bytes FROM disk_scans
-            WHERE host_id = %s AND status = 'completed' AND categories IS NOT NULL AND id != %s
-            ORDER BY completed_at DESC LIMIT 1
-            """,
-            (host_id, scan_id)
-        )
-        agent_scan_row = cursor.fetchone()
-        if agent_scan_row and agent_scan_row[0]:
-            agent_categories = agent_scan_row[0]
-            if isinstance(agent_categories, str):
-                agent_categories = json.loads(agent_categories)
-            agent_total_size = agent_scan_row[1] or 0
-            
-            categories_with_disk_info = agent_categories.copy()
-            categories_with_disk_info['drive'] = drive
-
-            if 'disk_info' not in categories_with_disk_info or not isinstance(categories_with_disk_info.get('disk_info'), dict) or not categories_with_disk_info['disk_info'].get('total'):
-                cursor.execute(
-                    "SELECT payload FROM metrics_raw WHERE host_id = %s ORDER BY created_at DESC LIMIT 1",
-                    (host_id,)
-                )
-                mrow = cursor.fetchone()
-                if mrow and mrow[0]:
-                    m_dict = extract_metrics_dict_from_payload(mrow[0])
-                    dt_gb = m_dict.get('disk_total_gb')
-                    df_gb = m_dict.get('disk_free_gb')
-                    dp = m_dict.get('disk_percent')
-                    if dt_gb and df_gb:
-                        tot = int(float(dt_gb) * (1024 ** 3))
-                        fre = int(float(df_gb) * (1024 ** 3))
-                        usd = tot - fre
-                        pct = float(dp) if dp is not None else round((usd / tot) * 100, 2)
-                        categories_with_disk_info['disk_info'] = {
-                            "drive": drive,
-                            "device": drive,
-                            "total": tot,
-                            "used": usd,
-                            "free": fre,
-                            "used_percent": pct,
-                            "percent_used": pct
-                        }
-            
-            cursor.execute(
-                """
-                UPDATE disk_scans 
-                SET status = 'completed',
-                    total_size_bytes = %s,
-                    categories = %s,
-                    completed_at = NOW()
-                WHERE id = %s
-                """,
-                (agent_total_size, json.dumps(categories_with_disk_info), scan_id)
-            )
-            conn.commit()
-
-            for cat_name, cat_data in agent_categories.items():
-                if isinstance(cat_data, dict):
-                    for file_info in cat_data.get('files', []):
-                        cursor.execute(
-                            """
-                            INSERT INTO cleanup_items 
-                            (scan_id, category, file_path, file_size_bytes, last_accessed, is_safe, risk_level)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
-                            """,
-                            (
-                                scan_id,
-                                cat_name,
-                                file_info.get('path', 'unknown'),
-                                file_info.get('size', 0),
-                                file_info.get('last_accessed'),
-                                file_info.get('is_safe', True),
-                                file_info.get('risk_level', 'low')
-                            )
-                        )
-            conn.commit()
-            cursor.close()
-            logger.info(f"Scan task completed using agent telemetry for host_id={host_id}")
-            return
+        # Check if host is local to run direct disk scanner
         cursor.execute("SELECT hostname FROM hosts WHERE id = %s;", (host_id,))
         hrow = cursor.fetchone()
         local_hostname = socket.gethostname()
-        if hrow and hrow[0] == local_hostname:
-            scanner = DiskScanner(host_id, drive=drive)
-            scan_results = scanner.scan_all_categories()
-        else:
-            logger.info(f"Host ID {host_id} ({hrow[0] if hrow else 'desconocido'}) es remoto. Esperando telemetría del agente...")
+        is_local_host = (
+            not hrow 
+            or hrow[0] == local_hostname 
+            or (hrow[0] and hrow[0].lower() in ['localhost', '127.0.0.1', 'local', ''])
+            or host_id == 1
+        )
+
+        scan_results = None
+        if is_local_host:
+            try:
+                logger.info(f"Executing real-time local DiskScanner for host_id={host_id}, drive={drive}")
+                scanner = DiskScanner(host_id, drive=drive)
+                scan_results = scanner.scan_all_categories()
+            except Exception as scan_err:
+                logger.warning(f"Direct DiskScanner failed, checking fallback agent data: {scan_err}")
+
+        if not scan_results:
+            # Check if agent scan results exist for this host as fallback
             cursor.execute(
                 """
-                UPDATE disk_scans 
-                SET status = 'failed',
-                    error_message = %s,
-                    completed_at = NOW()
-                WHERE id = %s
+                SELECT categories, total_size_bytes FROM disk_scans
+                WHERE host_id = %s AND status = 'completed' AND categories IS NOT NULL AND id != %s
+                ORDER BY completed_at DESC LIMIT 1
                 """,
-                (
-                    "Esperando datos del agente remoto. Por favor ejecuta 'python agent/standalone_agent.py' en el equipo destino.",
-                    scan_id
-                )
+                (host_id, scan_id)
             )
-            conn.commit()
-            cursor.close()
-            return
+            agent_scan_row = cursor.fetchone()
+            if agent_scan_row and agent_scan_row[0]:
+                agent_categories = agent_scan_row[0]
+                if isinstance(agent_categories, str):
+                    agent_categories = json.loads(agent_categories)
+                agent_total_size = agent_scan_row[1] or 0
+                
+                categories_with_disk_info = agent_categories.copy()
+                categories_with_disk_info['drive'] = drive
+
+                if 'disk_info' not in categories_with_disk_info or not isinstance(categories_with_disk_info.get('disk_info'), dict) or not categories_with_disk_info['disk_info'].get('total'):
+                    cursor.execute(
+                        "SELECT payload FROM metrics_raw WHERE host_id = %s ORDER BY created_at DESC LIMIT 1",
+                        (host_id,)
+                    )
+                    mrow = cursor.fetchone()
+                    if mrow and mrow[0]:
+                        m_dict = extract_metrics_dict_from_payload(mrow[0])
+                        dt_gb = m_dict.get('disk_total_gb')
+                        df_gb = m_dict.get('disk_free_gb')
+                        dp = m_dict.get('disk_percent')
+                        if dt_gb and df_gb:
+                            tot = int(float(dt_gb) * (1024 ** 3))
+                            fre = int(float(df_gb) * (1024 ** 3))
+                            usd = tot - fre
+                            pct = float(dp) if dp is not None else round((usd / tot) * 100, 2)
+                            categories_with_disk_info['disk_info'] = {
+                                "drive": drive,
+                                "device": drive,
+                                "total": tot,
+                                "used": usd,
+                                "free": fre,
+                                "used_percent": pct,
+                                "percent_used": pct
+                            }
+                
+                cursor.execute(
+                    """
+                    UPDATE disk_scans 
+                    SET status = 'completed',
+                        total_size_bytes = %s,
+                        categories = %s,
+                        completed_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (agent_total_size, json.dumps(categories_with_disk_info), scan_id)
+                )
+                conn.commit()
+
+                for cat_name, cat_data in agent_categories.items():
+                    if isinstance(cat_data, dict):
+                        for file_info in cat_data.get('files', []):
+                            cursor.execute(
+                                """
+                                INSERT INTO cleanup_items 
+                                (scan_id, category, file_path, file_size_bytes, last_accessed, is_safe, risk_level)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                """,
+                                (
+                                    scan_id,
+                                    cat_name,
+                                    file_info.get('path', 'unknown'),
+                                    file_info.get('size', 0),
+                                    file_info.get('last_accessed'),
+                                    file_info.get('is_safe', True),
+                                    file_info.get('risk_level', 'low')
+                                )
+                            )
+                conn.commit()
+                cursor.close()
+                logger.info(f"Scan task completed using agent telemetry fallback for host_id={host_id}")
+                return
+            else:
+                logger.info(f"Host ID {host_id} es remoto y no tiene telemetría disponible.")
+                cursor.execute(
+                    """
+                    UPDATE disk_scans 
+                    SET status = 'failed',
+                        error_message = %s,
+                        completed_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (
+                        "Esperando datos del agente remoto. Por favor ejecuta 'python agent/standalone_agent.py' en el equipo destino.",
+                        scan_id
+                    )
+                )
+                conn.commit()
+                cursor.close()
+                return
         
         categories_with_disk_info = scan_results['categories'].copy()
         categories_with_disk_info['disk_info'] = scan_results.get('disk_info', {})

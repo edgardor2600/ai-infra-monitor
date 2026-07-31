@@ -311,7 +311,9 @@ const DiskAnalyzer = () => {
       const hosts = hostsResponse.data.hosts || [];
       
       if (hosts.length === 0) {
-        setScanError('No se encontraron hosts. Asegúrate de que el agente esté en ejecución.');
+        setScanError('No se encontraron hosts. Asegúrate de que el servidor backend y el agente estén en ejecución.');
+        setIsServerOffline(true);
+        setShowServerModal(true);
         setLoading(false);
         setScanning(false);
         return;
@@ -332,10 +334,12 @@ const DiskAnalyzer = () => {
     } catch (error) {
       console.error('Error starting scan:', error);
       setIsServerOffline(true);
-      setScanError('⚠️ No se pudo conectar con el servidor local backend (http://127.0.0.1:8000). Asegúrate de iniciar el servidor ejecutando iniciar.bat o haciendo clic en "⚡ Iniciar Servidor Local".');
+      setShowServerModal(true);
+      setScanError('⚠️ No se pudo conectar con el servidor local backend (http://127.0.0.1:8000). El servidor no se encuentra encendido.');
       setScanning(false);
     } finally {
       setLoading(false);
+      setScanning(false);
     }
   };
 
