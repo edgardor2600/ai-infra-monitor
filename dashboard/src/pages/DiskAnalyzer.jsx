@@ -1060,6 +1060,83 @@ const DiskAnalyzer = () => {
         <p className="subtitle">Escaneo profundo, 100% seguro y optimización de almacenamiento</p>
       </div>
 
+      {/* Server Offline / Connection Error Banner (Top Page Alert) */}
+      {(isServerOffline || scanError) && (
+        <div style={{
+          background: 'rgba(239, 68, 68, 0.12)',
+          border: '1px solid rgba(239, 68, 68, 0.4)',
+          borderRadius: '12px',
+          padding: '1.25rem 1.5rem',
+          marginBottom: '1.5rem',
+          color: '#f8fafc',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.75rem',
+          boxShadow: '0 4px 15px rgba(239, 68, 68, 0.15)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+            <span style={{ fontSize: '1.75rem', lineHeight: '1' }}>🔴</span>
+            <div style={{ flex: 1 }}>
+              <h4 style={{ margin: 0, color: '#fca5a5', fontSize: '1.05rem', fontWeight: '700' }}>
+                Servidor Local Backend Desconectado (127.0.0.1:8000)
+              </h4>
+              <p style={{ margin: '0.35rem 0 0 0', fontSize: '0.9rem', color: '#cbd5e1', lineHeight: '1.45' }}>
+                {scanError || 'El servidor backend de monitoreo no se encuentra en ejecución. No es posible actualizar los parámetros del disco ni realizar un escaneo en tiempo real sin encender el servidor.'}
+              </p>
+              {currentScan && (
+                <p style={{ margin: '0.4rem 0 0 0', fontSize: '0.82rem', color: '#f59e0b', fontWeight: '600' }}>
+                  ⚠️ Atención: Los datos visualizados abajo corresponden a un escaneo guardado anteriormente. Encender el servidor permitirá actualizar las métricas actuales.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => setShowServerModal(true)}
+              style={{
+                background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                color: '#ffffff',
+                border: 'none',
+                padding: '0.6rem 1.1rem',
+                borderRadius: '8px',
+                fontWeight: '700',
+                fontSize: '0.88rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)'
+              }}
+            >
+              ⚡ Iniciar Servidor Local (.bat)
+            </button>
+
+            <button
+              onClick={async () => {
+                setLoading(true);
+                await fetchDrives();
+                await fetchScans();
+                await fetchLicenseInfo();
+                setLoading(false);
+              }}
+              style={{
+                background: 'rgba(255, 255, 255, 0.08)',
+                color: '#e2e8f0',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                padding: '0.6rem 1.1rem',
+                borderRadius: '8px',
+                fontWeight: '600',
+                fontSize: '0.88rem',
+                cursor: 'pointer'
+              }}
+            >
+              🔄 Reintentar Conexión
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Purge Alert Notifications Banner */}
       {purgeAlerts.length > 0 && (
         <div className="purge-warning-banner" style={{ background: '#fffbebf0', borderLeft: '4px solid #f59e0b', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem', color: '#92400e' }}>
@@ -1213,83 +1290,6 @@ const DiskAnalyzer = () => {
               </button>
             </div>
           </div>
-
-          {/* Server Offline / Connection Error Banner */}
-          {(isServerOffline || scanError) && (
-            <div style={{
-              background: 'rgba(239, 68, 68, 0.12)',
-              border: '1px solid rgba(239, 68, 68, 0.4)',
-              borderRadius: '12px',
-              padding: '1.25rem 1.5rem',
-              marginBottom: '1.5rem',
-              color: '#f8fafc',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '0.75rem',
-              boxShadow: '0 4px 15px rgba(239, 68, 68, 0.15)'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-                <span style={{ fontSize: '1.75rem', lineHeight: '1' }}>🔴</span>
-                <div style={{ flex: 1 }}>
-                  <h4 style={{ margin: 0, color: '#fca5a5', fontSize: '1.05rem', fontWeight: '700' }}>
-                    Servidor Local Backend Desconectado (127.0.0.1:8000)
-                  </h4>
-                  <p style={{ margin: '0.35rem 0 0 0', fontSize: '0.9rem', color: '#cbd5e1', lineHeight: '1.45' }}>
-                    {scanError || 'El servidor backend de monitoreo no se encuentra en ejecución. No es posible actualizar los parámetros del disco ni realizar un escaneo en tiempo real sin encender el servidor.'}
-                  </p>
-                  {currentScan && (
-                    <p style={{ margin: '0.4rem 0 0 0', fontSize: '0.82rem', color: '#f59e0b', fontWeight: '600' }}>
-                      ⚠️ Atención: Los datos visualizados abajo corresponden a un escaneo guardado anteriormente. Encender el servidor permitirá actualizar las métricas actuales.
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
-                <button
-                  onClick={() => setShowServerModal(true)}
-                  style={{
-                    background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                    color: '#ffffff',
-                    border: 'none',
-                    padding: '0.6rem 1.1rem',
-                    borderRadius: '8px',
-                    fontWeight: '700',
-                    fontSize: '0.88rem',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                    boxShadow: '0 4px 10px rgba(239, 68, 68, 0.3)'
-                  }}
-                >
-                  ⚡ Iniciar Servidor Local (.bat)
-                </button>
-
-                <button
-                  onClick={async () => {
-                    setLoading(true);
-                    await fetchDrives();
-                    await fetchScans();
-                    await fetchLicenseInfo();
-                    setLoading(false);
-                  }}
-                  style={{
-                    background: 'rgba(255, 255, 255, 0.08)',
-                    color: '#e2e8f0',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
-                    padding: '0.6rem 1.1rem',
-                    borderRadius: '8px',
-                    fontWeight: '600',
-                    fontSize: '0.88rem',
-                    cursor: 'pointer'
-                  }}
-                >
-                  🔄 Reintentar Conexión
-                </button>
-              </div>
-            </div>
-          )}
 
           {currentScan && (
             <div className="scan-results">
