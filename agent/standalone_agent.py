@@ -282,7 +282,11 @@ def execute_agent_task(task, host_id, org_id):
     payload = task.get("payload", {})
     scan_id = task.get("scan_id")
     
-    logger.info(f"⚡ Tarea de mantenimiento recibida del servidor: ID={task_id}, tipo={task_type}")
+    print("\n" + "=" * 65)
+    logger.info(f"⚡ [ORDEN EN VIVO RECIBIDA] Tarea ID #{task_id} - Tipo: '{task_type}'")
+    logger.info(f"   ├─ Org ID: {org_id} | Host ID: {host_id}")
+    logger.info(f"   └─ Categorías solicitadas: {payload.get('categories', [])}")
+    print("=" * 65)
     
     files_deleted = 0
     size_freed = 0
@@ -299,9 +303,11 @@ def execute_agent_task(task, host_id, org_id):
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_path = os.path.join(user_profile, '.ai-infra-monitor', 'cleanup_backup', f"scan_{scan_id or 'remote'}_{timestamp}")
             os.makedirs(backup_path, exist_ok=True)
+            logger.info(f"🛡️ Resguardo de seguridad activo en: {backup_path}")
             
         for cat in categories:
             cat_files = files_by_cat.get(cat, [])
+            logger.info(f"🧹 Eliminando físicamente archivos de categoría '{cat}' ({len(cat_files)} elementos)...")
             for finfo in cat_files:
                 fp = finfo.get('path')
                 fsize = finfo.get('size', 0)
@@ -324,11 +330,15 @@ def execute_agent_task(task, host_id, org_id):
                         
                     files_deleted += 1
                     size_freed += fsize
+                    logger.info(f"   🗑️ Borrado de disco: {fp} ({fsize} bytes)")
                 except Exception as err:
-                    errors.append(f"Error borrando {fp}: {err}")
+                    err_msg = f"Error borrando {fp}: {err}"
+                    errors.append(err_msg)
+                    logger.warning(f"   ⚠️ {err_msg}")
 
     elif task_type == 'purge_backup':
         bpath = payload.get('backup_path')
+        logger.info(f"🔥 Eliminando definitivamente respaldo en disco: {bpath}")
         if bpath and os.path.exists(bpath):
             try:
                 for root, dirs, files in os.walk(bpath):
@@ -341,7 +351,9 @@ def execute_agent_task(task, host_id, org_id):
                 shutil.rmtree(bpath, ignore_errors=True)
                 logger.info(f"🗑️ Resguardo de backup liberado exitosamente: {bpath}")
             except Exception as err:
-                errors.append(f"Error liberando respaldo {bpath}: {err}")
+                err_msg = f"Error liberando respaldo {bpath}: {err}"
+                errors.append(err_msg)
+                logger.warning(f"   ⚠️ {err_msg}")
 
     # Fresh disk usage snapshot
     is_win = os.name == 'nt'
@@ -378,8 +390,14 @@ def execute_agent_task(task, host_id, org_id):
     }
     
     try:
+        logger.info(f"📤 Reportando resultado de tarea #{task_id} a servidor backend...")
         http_post(f"{BACKEND_URL}/api/v1/disk-analyzer/task-result", result_payload)
-        logger.info(f"✅ Tarea {task_id} finalizada. Archivos eliminados: {files_deleted}, Espacio liberado: {size_freed} bytes.")
+        print("-" * 65)
+        logger.info(f"✅ TAREA #{task_id} FINALIZADA Y CONFIRMADA AL DASHBOARD:")
+        logger.info(f"   ├─ Total archivos eliminados: {files_deleted}")
+        logger.info(f"   ├─ Espacio liberado: {size_freed} bytes")
+        logger.info(f"   └─ Estado nuevo del disco ({drive_name}): {pct_disk}% usado ({fre_disk // (1024**3)} GB libres)")
+        print("=" * 65 + "\n")
     except Exception as post_err:
         logger.warning(f"Error enviando resultado de tarea {task_id}: {post_err}")
 
@@ -401,29 +419,28 @@ def execute_agent_task(task, host_id, org_id):
 
 def main():
     hostname = socket.gethostname()
-    print("=" * 60)
-    print(" 🚀 AI Infra Monitor - Agente de Monitoreo en Vivo")
-    print(f" 🖥️ Host: {hostname}")
-    print(f" 🌐 Backend: {BACKEND_URL}")
-    print("=" * 60)
+    org_id = int(os.getenv("AGENT_ORG_ID", "1"))
+    
+    print("=" * 65)
+    print(" 🚀 AI INFRA MONITOR - AGENTE DE MONITOREO Y LIMPIEZA EN VIVO")
+    print(f" 🖥️ Equipo / Hostname: {hostname}")
+    print(f" 🏢 Organización ID: {org_id}")
+    print(f" 🌐 Servidor Backend: {BACKEND_URL}")
+    print("=" * 65)
     
     host_id = auto_register_host()
-    logger.info(f"Iniciando telemetría para Host ID: {host_id} (intervalo: {INTERVAL}s)...")
+    logger.info(f"🆔 Agente registrado exitosamente. Host ID={host_id}, Org ID={org_id} (intervalo: {INTERVAL}s).")
     
     # Perform initial real local disk scan for this machine
     try:
-        logger.info("Realizando escaneo local de disco inicial en el equipo...")
+        logger.info("🔍 Ejecutando escaneo físico inicial de disco en el equipo...")
         cat_res, tot_size = scan_local_cleanup_paths()
-        org_id = int(os.getenv("AGENT_ORG_ID", "1"))
         
         is_win = os.name == 'nt'
         drive_name = "C:" if is_win else "/"
         try:
             disk = psutil.disk_usage('C:\\' if is_win else '/')
-            tot_disk = disk.total
-            usd_disk = disk.used
-            fre_disk = disk.free
-            pct_disk = disk.percent
+            tot_disk, usd_disk, fre_disk, pct_disk = disk.total, disk.used, disk.free, disk.percent
         except Exception:
             tot_disk, usd_disk, fre_disk, pct_disk = 0, 0, 0, 0.0
 
@@ -446,7 +463,7 @@ def main():
             "categories": cat_res
         }
         http_post(f"{BACKEND_URL}/api/v1/disk-analyzer/agent-scan-results", scan_payload)
-        logger.info(f"🔍 Escaneo de disco enviado con éxito: {tot_size} bytes en categorías reales (Disco {drive_name}: {pct_disk}% usado).")
+        logger.info(f"✅ Escaneo inicial publicado en backend: {tot_size} bytes detectados en categorías (Disco {drive_name}: {pct_disk}% ocupado).")
     except Exception as e:
         logger.warning(f"No se pudo enviar escaneo inicial de disco: {e}")
 
@@ -454,9 +471,12 @@ def main():
         try:
             # Poll and execute pending remote cleanup/purge tasks
             try:
-                task_resp = http_get(f"{BACKEND_URL}/api/v1/disk-analyzer/pending-tasks?host_id={host_id}")
-                for task in task_resp.get("tasks", []):
-                    execute_agent_task(task, host_id, org_id)
+                task_resp = http_get(f"{BACKEND_URL}/api/v1/disk-analyzer/pending-tasks?host_id={host_id}&org_id={org_id}")
+                tasks = task_resp.get("tasks", [])
+                if tasks:
+                    logger.info(f"⚡ ¡{len(tasks)} tarea(s) encolada(s) detectada(s)! Iniciando ejecución...")
+                    for task in tasks:
+                        execute_agent_task(task, host_id, org_id)
             except Exception as task_poll_err:
                 logger.debug(f"Aviso de sondeo de tareas: {task_poll_err}")
 
@@ -472,7 +492,7 @@ def main():
                 "processes": processes
             }
             res = http_post(f"{BACKEND_URL}/api/v1/ingest/metrics", batch)
-            logger.info(f"⚡ Telemetría enviada con éxito ({len(metrics)} métricas, {len(processes)} procesos): {res.get('status', 'ok')}")
+            logger.info(f"📡 [EN VIVO] Telemetría y estado de disco enviados ({len(metrics)} métricas, {len(processes)} procesos). Esperando órdenes...")
             time.sleep(INTERVAL)
         except KeyboardInterrupt:
             print("\nAgente detenido por el usuario.")

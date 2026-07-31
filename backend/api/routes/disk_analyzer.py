@@ -1612,9 +1612,13 @@ async def delete_scheduled_cleanup(schedule_id: int, authorization: Optional[str
 
 
 @router.get("/pending-tasks", response_model=dict)
-async def get_pending_tasks(host_id: int, authorization: Optional[str] = Header(None)):
-    """Agent polling endpoint: Retrieve pending cleanup / purge tasks for host."""
-    org_id = get_current_org_id(authorization)
+async def get_pending_tasks(
+    host_id: Optional[int] = 1,
+    org_id: Optional[int] = None,
+    authorization: Optional[str] = Header(None)
+):
+    """Agent polling endpoint: Retrieve pending cleanup / purge tasks for host or org."""
+    target_org_id = org_id or get_current_org_id(authorization)
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=500, detail="Database connection failed")
@@ -1625,10 +1629,10 @@ async def get_pending_tasks(host_id: int, authorization: Optional[str] = Header(
             """
             SELECT id, task_type, payload, scan_id
             FROM cleanup_tasks
-            WHERE host_id = %s AND org_id = %s AND status = 'pending'
+            WHERE (host_id = %s OR org_id = %s) AND status = 'pending'
             ORDER BY created_at ASC
             """,
-            (host_id, org_id)
+            (host_id, target_org_id)
         )
         rows = cursor.fetchall()
         tasks = []
@@ -1649,6 +1653,9 @@ async def get_pending_tasks(host_id: int, authorization: Optional[str] = Header(
         for t in tasks:
             cursor.execute("UPDATE cleanup_tasks SET status = 'in_progress' WHERE id = %s", (t["task_id"],))
         conn.commit()
+        
+        if tasks:
+            logger.info(f"⚡ [PENDING-TASKS] Entregadas {len(tasks)} tareas pendientes al agente (Host ID={host_id}, Org ID={target_org_id})")
         return {"ok": True, "tasks": tasks}
     finally:
         conn.close()
