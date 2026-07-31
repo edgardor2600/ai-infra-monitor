@@ -5,6 +5,7 @@ This module scans the disk and identifies files that can be cleaned.
 """
 
 import os
+import json
 import logging
 import psutil
 import shutil
