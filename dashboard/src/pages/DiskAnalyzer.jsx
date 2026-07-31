@@ -174,6 +174,20 @@ const DiskAnalyzer = () => {
   const [downloadingLauncher, setDownloadingLauncher] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState(false);
 
+  // Cleanup Task Execution Progress Modal State
+  const [cleanupTaskState, setCleanupTaskState] = useState({
+    isOpen: false,
+    taskId: null,
+    operationId: null,
+    status: 'pending',
+    progressPercent: 10,
+    statusText: 'Enviando orden de limpieza al agente...',
+    filesDeleted: 0,
+    sizeFreed: 0,
+    errors: [],
+    backupPath: null
+  });
+
   const handleDownloadLauncher = async (osType = 'windows') => {
     setDownloadingLauncher(true);
     try {
@@ -474,23 +488,75 @@ const DiskAnalyzer = () => {
     }
   };
 
-  const pollTaskCompletion = async (taskId) => {
+  const pollTaskCompletion = async (taskId, operationId) => {
     let attempts = 0;
-    const maxAttempts = 20;
+    const maxAttempts = 25;
+    setCleanupTaskState({
+      isOpen: true,
+      taskId,
+      operationId,
+      status: 'pending',
+      progressPercent: 15,
+      statusText: 'Orden encolada. Esperando que el Agente en tu equipo reciba la tarea...',
+      filesDeleted: 0,
+      sizeFreed: 0,
+      errors: [],
+      backupPath: null
+    });
+
     while (attempts < maxAttempts) {
       await new Promise(r => setTimeout(r, 2000));
       attempts++;
+      const currentPct = Math.min(25 + attempts * 3, 90);
+
       try {
         const res = await api.get(`/disk-analyzer/task-status/${taskId}`);
-        if (res.data.status === 'completed' || res.data.status === 'completed_with_warnings') {
-          return res.data;
-        } else if (res.data.status === 'failed') {
-          throw new Error('La tarea falló en el equipo remoto.');
+        const taskData = res.data;
+        const currentStatus = taskData.status;
+        const resultPayload = taskData.result || {};
+
+        if (currentStatus === 'in_progress') {
+          setCleanupTaskState(prev => ({
+            ...prev,
+            status: 'in_progress',
+            progressPercent: Math.max(prev.progressPercent, currentPct),
+            statusText: '⚡ El Agente está procesando y eliminando los archivos físicos en tu equipo...'
+          }));
+        } else if (currentStatus === 'completed' || currentStatus === 'completed_with_warnings') {
+          setCleanupTaskState(prev => ({
+            ...prev,
+            status: currentStatus,
+            progressPercent: 100,
+            statusText: currentStatus === 'completed' ? '✅ ¡Limpieza física completada con éxito!' : '⚠️ Limpieza completada con algunas advertencias.',
+            filesDeleted: resultPayload.files_deleted || 0,
+            sizeFreed: resultPayload.size_freed || 0,
+            errors: resultPayload.errors || [],
+            backupPath: resultPayload.backup_path
+          }));
+          return taskData;
+        } else if (currentStatus === 'failed') {
+          setCleanupTaskState(prev => ({
+            ...prev,
+            status: 'failed',
+            progressPercent: 100,
+            statusText: '❌ La orden de limpieza falló en el equipo remoto.',
+            errors: resultPayload.errors || ['Error en la eliminación física por el agente.']
+          }));
+          return taskData;
         }
       } catch (err) {
+        console.warn('Error polling task status:', err);
         if (attempts >= maxAttempts) break;
       }
     }
+
+    setCleanupTaskState(prev => ({
+      ...prev,
+      status: 'timeout',
+      progressPercent: 90,
+      statusText: '⏱️ El agente local tardó más de lo esperado en responder.',
+      errors: ['Verifica que el script iniciar_servidor.bat esté ejecutándose en tu computadora.']
+    }));
   };
 
   const handleConfirmPurge = async () => {
@@ -502,7 +568,7 @@ const DiskAnalyzer = () => {
       });
       if (response.data.success || response.data.ok) {
         if (response.data.task_id) {
-          await pollTaskCompletion(response.data.task_id);
+          await pollTaskCompletion(response.data.task_id, response.data.operation_id);
         }
         setPurgeModal({ isOpen: false, item: null, loading: false, aiAnalysis: null, backupInfo: null });
         if (currentScan?.scan_id) {
@@ -586,7 +652,7 @@ const DiskAnalyzer = () => {
 
       if (response.data.ok || response.data.task_id) {
         if (response.data.task_id) {
-          await pollTaskCompletion(response.data.task_id);
+          await pollTaskCompletion(response.data.task_id, response.data.operation_id);
         }
         await fetchScanDetails(currentScan.scan_id);
         await fetchScans();
@@ -595,7 +661,7 @@ const DiskAnalyzer = () => {
       }
     } catch (error) {
       console.error('Error performing cleanup:', error);
-      alert('Error al realizar la limpieza.');
+      alert('Error al realizar la limpieza: ' + (error.response?.data?.detail || error.message));
     } finally {
       setCleanupInProgress(false);
     }
@@ -1145,7 +1211,7 @@ const DiskAnalyzer = () => {
                 </div>
               </div>
 
-              {currentScan.disk_info && (
+              {currentScan.disk_info && currentScan.disk_info.total > 0 ? (
                 <div className="disk-space-widget">
                   <h3>💾 Estado del Disco ({currentScan.disk_info.drive || selectedDrive})</h3>
                   <div className="disk-stats">
@@ -1170,6 +1236,26 @@ const DiskAnalyzer = () => {
                   </div>
                   <div className="disk-progress-label">
                     {currentScan.disk_info.percent_used ?? currentScan.disk_info.used_percent ?? 0}% Usado
+                  </div>
+                </div>
+              ) : (
+                <div className="disk-space-widget" style={{ borderColor: 'rgba(245, 158, 11, 0.4)', background: 'rgba(245, 158, 11, 0.05)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <span style={{ fontSize: '1.75rem' }}>⚠️</span>
+                    <div>
+                      <h3 style={{ margin: 0, color: '#fef08a' }}>Esperando Mediciones Reales del Disco ({selectedDrive})</h3>
+                      <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.875rem', color: '#cbd5e1', lineHeight: '1.4' }}>
+                        No hay lecturas físicas del disco grabadas en tiempo real para esta computadora. Ejecuta el archivo <code>iniciar_servidor_org_{licenseInfo?.organization_id || 1}.bat</code> en tu equipo para vincular el monitoreo en vivo sin datos ficticios.
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    <button
+                      onClick={() => setShowServerModal(true)}
+                      style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', color: '#0f172a', border: 'none', padding: '0.6rem 1.2rem', borderRadius: '8px', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+                    >
+                      ⚡ Activar Servidor Local (.bat)
+                    </button>
                   </div>
                 </div>
               )}
@@ -1695,6 +1781,115 @@ const DiskAnalyzer = () => {
                 style={{ padding: '0.6rem 1.25rem', background: 'rgba(255, 255, 255, 0.1)', color: '#e2e8f0', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
               >
                 Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cleanup Task Execution & Progress Modal */}
+      {cleanupTaskState.isOpen && (
+        <div className="modal-overlay" onClick={() => {
+          if (['completed', 'completed_with_warnings', 'failed', 'timeout'].includes(cleanupTaskState.status)) {
+            setCleanupTaskState(prev => ({ ...prev, isOpen: false }));
+          }
+        }}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '620px', background: '#0f172a', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: '16px', padding: '1.75rem', color: '#f8fafc' }}>
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '0.75rem' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#f8fafc', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span>🧹</span> Limpieza Física en Tu Equipo
+              </h3>
+              {['completed', 'completed_with_warnings', 'failed', 'timeout'].includes(cleanupTaskState.status) && (
+                <button
+                  onClick={() => setCleanupTaskState(prev => ({ ...prev, isOpen: false }))}
+                  style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '1.5rem', cursor: 'pointer' }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {/* Progress bar container */}
+              <div style={{ background: 'rgba(15, 23, 42, 0.8)', padding: '1.25rem', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: 600, color: '#e2e8f0' }}>
+                  <span>{cleanupTaskState.statusText}</span>
+                  <span style={{ color: '#38bdf8' }}>{cleanupTaskState.progressPercent}%</span>
+                </div>
+
+                <div style={{ width: '100%', height: '12px', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '6px', overflow: 'hidden', position: 'relative' }}>
+                  <div style={{
+                    width: `${cleanupTaskState.progressPercent}%`,
+                    height: '100%',
+                    background: cleanupTaskState.status === 'failed' ? '#ef4444' : cleanupTaskState.status === 'timeout' ? '#f59e0b' : 'linear-gradient(90deg, #6366f1 0%, #38bdf8 100%)',
+                    borderRadius: '6px',
+                    transition: 'width 0.4s ease-in-out'
+                  }}></div>
+                </div>
+              </div>
+
+              {/* Status metrics pill */}
+              {(cleanupTaskState.filesDeleted > 0 || cleanupTaskState.sizeFreed > 0) && (
+                <div style={{ display: 'flex', gap: '1rem', background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.2)', padding: '1rem', borderRadius: '10px' }}>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block' }}>Archivos Eliminados:</span>
+                    <strong style={{ fontSize: '1.1rem', color: '#38bdf8' }}>{cleanupTaskState.filesDeleted} elementos</strong>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block' }}>Espacio Liberado:</span>
+                    <strong style={{ fontSize: '1.1rem', color: '#10b981' }}>{formatBytes(cleanupTaskState.sizeFreed)}</strong>
+                  </div>
+                </div>
+              )}
+
+              {/* Backup path notice */}
+              {cleanupTaskState.backupPath && (
+                <div style={{ fontSize: '0.825rem', color: '#94a3b8', background: 'rgba(255, 255, 255, 0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                  🛡️ <strong>Copia de Resguardo Local:</strong> <code>{cleanupTaskState.backupPath}</code>
+                </div>
+              )}
+
+              {/* Error messages list */}
+              {cleanupTaskState.errors && cleanupTaskState.errors.length > 0 && (
+                <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '1rem', borderRadius: '10px', color: '#fca5a5' }}>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#ef4444', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <span>⚠️</span> Detalles y Advertencias de Eliminación:
+                  </h4>
+                  <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.825rem', maxHeight: '120px', overflowY: 'auto' }}>
+                    {cleanupTaskState.errors.map((err, i) => (
+                      <li key={`task-err-${i}`} style={{ marginBottom: '0.25rem', wordBreak: 'break-all' }}>{err}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Timeout agent launcher helper */}
+              {cleanupTaskState.status === 'timeout' && (
+                <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '1rem', borderRadius: '10px', color: '#fef08a' }}>
+                  <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.875rem' }}>
+                    El servidor de monitoreo en tu computadora parece estar apagado o en pausa. Haz clic abajo para encenderlo.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setCleanupTaskState(prev => ({ ...prev, isOpen: false }));
+                      setShowServerModal(true);
+                    }}
+                    style={{ background: '#f59e0b', color: '#0f172a', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    ⚡ Iniciar Servidor Local (.bat)
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-footer" style={{ marginTop: '1.25rem', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                className="btn-modal-cancel"
+                onClick={() => setCleanupTaskState(prev => ({ ...prev, isOpen: false }))}
+                disabled={['pending', 'in_progress'].includes(cleanupTaskState.status)}
+                style={{ opacity: ['pending', 'in_progress'].includes(cleanupTaskState.status) ? 0.5 : 1 }}
+              >
+                {['pending', 'in_progress'].includes(cleanupTaskState.status) ? 'Procesando...' : 'Cerrar'}
               </button>
             </div>
           </div>

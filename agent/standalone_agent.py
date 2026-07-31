@@ -367,6 +367,7 @@ def execute_agent_task(task, host_id, org_id):
         "host_id": host_id,
         "status": "completed" if not errors else "completed_with_warnings",
         "result": {
+            "operation_id": payload.get('operation_id'),
             "files_deleted": files_deleted,
             "size_freed": size_freed,
             "backup_path": backup_path,

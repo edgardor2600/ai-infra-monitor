@@ -1105,16 +1105,8 @@ async def get_scan(scan_id: int, authorization: Optional[str] = Header(None)):
             except Exception as e:
                 logger.warning(f"Error fetching telemetry for scan host_id {host_id}: {e}")
 
-            if not disk_info:
-                disk_info = {
-                    "drive": "C:",
-                    "device": "C:",
-                    "total": 0,
-                    "used": 0,
-                    "free": 0,
-                    "used_percent": 0.0,
-                    "percent_used": 0.0
-                }
+            if disk_info and not disk_info.get("total"):
+                disk_info = None
 
         return {
             "scan_id": row[0],
@@ -1291,6 +1283,7 @@ async def perform_cleanup(request: CleanupRequest, authorization: Optional[str] 
             )
         else:
             task_payload = {
+                "operation_id": operation_id,
                 "categories": request.categories,
                 "create_backup": request.create_backup,
                 "files_by_category": files_by_category
@@ -1691,6 +1684,31 @@ async def receive_task_result(payload: AgentTaskResultPayload):
         files_deleted = payload.result.get('files_deleted', 0)
         size_freed = payload.result.get('size_freed', 0)
         backup_path = payload.result.get('backup_path')
+        operation_id = payload.result.get('operation_id')
+
+        if operation_id:
+            status_op = 'completed' if payload.status in ['completed', 'completed_with_warnings'] else 'failed'
+            err_msg = "\n".join(payload.result.get('errors', [])) if payload.result.get('errors') else None
+            cursor.execute(
+                """
+                UPDATE cleanup_operations
+                SET status = %s,
+                    total_files_deleted = %s,
+                    total_size_freed_bytes = %s,
+                    backup_path = %s,
+                    error_message = %s,
+                    completed_at = NOW()
+                WHERE id = %s
+                """,
+                (
+                    status_op,
+                    files_deleted,
+                    size_freed,
+                    backup_path,
+                    err_msg,
+                    operation_id
+                )
+            )
         
         if files_deleted > 0 or size_freed > 0 or backup_path:
             try:
