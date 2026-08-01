@@ -138,7 +138,7 @@ def http_post(url, data_dict):
         data=json_bytes,
         headers=headers
     )
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    with urllib.request.urlopen(req, timeout=30) as resp:
         return json.loads(resp.read().decode('utf-8'))
 
 
@@ -148,8 +148,9 @@ def http_get(url):
     if AGENT_TOKEN:
         headers['Authorization'] = f"Bearer {AGENT_TOKEN}"
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    with urllib.request.urlopen(req, timeout=30) as resp:
         return json.loads(resp.read().decode('utf-8'))
+
 
 
 def auto_register_host():
@@ -262,6 +263,10 @@ def scan_local_cleanup_paths():
             except Exception:
                 continue
                 
+        # Sort files by size descending and keep top 100 largest sample files for UI & DB payload
+        cat_files.sort(key=lambda x: x['size'], reverse=True)
+        cat_sample_files = cat_files[:100]
+
         total_size_bytes += cat_size
         categories_res[cat_id] = {
             "display_name": cat_meta['display_name'],
@@ -270,9 +275,9 @@ def scan_local_cleanup_paths():
             "is_safe_auto": cat_meta['is_safe_auto'],
             "total_size": cat_size,
             "file_count": cat_count,
-            "files": cat_files
+            "files": cat_sample_files
         }
-        logger.info(f"[SCAN] {cat_id}: {cat_count} archivos, {cat_size} bytes, {len(cat_files)} rutas incluidas")
+        logger.info(f"[SCAN] {cat_id}: {cat_count} archivos (totales), {cat_size} bytes, {len(cat_sample_files)} muestras de mayores archivos incluidas")
         
     return categories_res, total_size_bytes
 
@@ -306,16 +311,35 @@ def execute_agent_task(task, host_id, org_id):
             backup_path = os.path.join(user_profile, '.ai-infra-monitor', 'cleanup_backup', f"scan_{scan_id or 'remote'}_{timestamp}")
             os.makedirs(backup_path, exist_ok=True)
             logger.info(f"🛡️ Resguardo de seguridad activo en: {backup_path}")
-            
+
+        is_win = os.name == 'nt'
+        paths_map_sweep = {
+            'temp_files': [
+                os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Temp') if is_win else '/tmp',
+                os.path.join(user_profile, 'AppData', 'Local', 'Temp') if is_win else '/var/tmp'
+            ],
+            'browser_cache': [
+                os.path.join(user_profile, 'AppData', 'Local', 'Google', 'Chrome', 'User Data', 'Default', 'Cache') if is_win else os.path.join(user_profile, '.cache', 'google-chrome'),
+                os.path.join(user_profile, 'AppData', 'Local', 'Microsoft', 'Edge', 'User Data', 'Default', 'Cache') if is_win else None
+            ],
+            'pkg_managers': [
+                os.path.join(user_profile, 'AppData', 'Local', 'pip', 'Cache') if is_win else os.path.join(user_profile, '.cache', 'pip'),
+                os.path.join(user_profile, 'AppData', 'Local', 'npm-cache') if is_win else os.path.join(user_profile, '.npm', '_cacache')
+            ],
+            'system_logs': [
+                os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Logs') if is_win else '/var/log'
+            ]
+        }
+
         for cat in categories:
+            # 1. Limpieza de archivos específicos de la lista
             cat_files = files_by_cat.get(cat, [])
-            logger.info(f"🧹 Eliminando físicamente archivos de categoría '{cat}' ({len(cat_files)} elementos)...")
+            logger.info(f"🧹 Eliminando archivos principales de categoría '{cat}' ({len(cat_files)} muestras)...")
+            deleted_paths = set()
             for finfo in cat_files:
                 fp = finfo.get('path')
                 fsize = finfo.get('size', 0)
                 if not fp or not os.path.exists(fp):
-                    if fp:
-                        logger.debug(f"   ⏩ Ruta no encontrada (puede ya haber sido eliminada): {fp}")
                     continue
                 try:
                     if create_backup and backup_path:
@@ -329,8 +353,10 @@ def execute_agent_task(task, host_id, org_id):
                             
                     if os.path.isfile(fp):
                         os.remove(fp)
+                        deleted_paths.add(fp)
                     elif os.path.isdir(fp):
                         shutil.rmtree(fp, ignore_errors=True)
+                        deleted_paths.add(fp)
                         
                     files_deleted += 1
                     size_freed += fsize
@@ -339,6 +365,35 @@ def execute_agent_task(task, host_id, org_id):
                     err_msg = f"Error borrando {fp}: {err}"
                     errors.append(err_msg)
                     logger.warning(f"   ⚠️ {err_msg}")
+
+            # 2. Barrido completo de carpetas origen para la categoría
+            sweep_folders = paths_map_sweep.get(cat, [])
+            logger.info(f"🧹 Realizando barrido completo de carpetas en categoría '{cat}'...")
+            for sfolder in sweep_folders:
+                if not sfolder or not os.path.exists(sfolder):
+                    continue
+                try:
+                    for root, _, sfiles in os.walk(sfolder):
+                        for sf in sfiles:
+                            sfp = os.path.join(root, sf)
+                            if sfp in deleted_paths or not os.path.exists(sfp):
+                                continue
+                            try:
+                                sfsize = os.path.getsize(sfp)
+                                if create_backup and backup_path:
+                                    c_backup = os.path.join(backup_path, cat)
+                                    os.makedirs(c_backup, exist_ok=True)
+                                    dest = os.path.join(c_backup, os.path.basename(sfp))
+                                    if not os.path.exists(dest):
+                                        shutil.copy2(sfp, dest)
+                                os.remove(sfp)
+                                files_deleted += 1
+                                size_freed += sfsize
+                            except Exception:
+                                pass
+                except Exception as serr:
+                    logger.warning(f"Aviso en barrido de carpeta {sfolder}: {serr}")
+
 
     elif task_type == 'run_disk_scan':
         # ─── NUEVO: Escaneo real del disco pedido por el backend ───
