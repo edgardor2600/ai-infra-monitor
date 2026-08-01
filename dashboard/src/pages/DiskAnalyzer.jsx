@@ -251,13 +251,32 @@ const DiskAnalyzer = () => {
     try {
       const response = await api.get('/disk-analyzer/drives');
       const availableDrives = response.data.drives || [];
+      // is_agent_live: true si el agente envió métricas hace menos de 10 minutos
+      // false si los datos son viejos (agente apagado) o nunca se conectó
+      const isAgentLive = response.data.is_agent_live ?? false;
+      const agentLastSeen = response.data.agent_last_seen_at;
+      const agentAgeSeconds = response.data.agent_data_age_seconds;
+
       setDrives(availableDrives);
-      setIsServerOffline(false);
+
+      // El servidor se considera "offline" si el agente NO tiene telemetría reciente
+      // Esto cubre el caso donde hay datos viejos en DB pero el agente ya no está corriendo
+      setIsServerOffline(!isAgentLive);
+
+      const ageMsg = agentAgeSeconds != null
+        ? `${Math.round(agentAgeSeconds / 60)} minutos` : 'desconocido';
+
+      if (isAgentLive) {
+        console.log(`[DiskAnalyzer] ✅ Agente activo — última telemetría hace ${ageMsg} — ${availableDrives.length} drive(s)`);
+      } else {
+        console.warn(`[DiskAnalyzer] ⚠️ Agente NO activo — último dato hace ${ageMsg} — drives en DB: ${availableDrives.length} (datos desactualizados)`);
+      }
+
       if (availableDrives.length > 0 && !selectedDrive) {
         setSelectedDrive(availableDrives[0].device || 'C:');
       }
     } catch (error) {
-      console.error('Error fetching drives:', error);
+      console.error('[DiskAnalyzer] ❌ Error fetching drives:', error);
       if (!error.response || error.code === 'ERR_NETWORK') {
         setIsServerOffline(true);
       }
@@ -305,14 +324,17 @@ const DiskAnalyzer = () => {
     console.log(`[DiskAnalyzer ${timestamp}] 🚀 startScan() iniciado — drive: ${selectedDrive}, isServerOffline: ${isServerOffline}, drives.length: ${drives.length}`);
 
     // ─── BUG #1 FIX: Validar estado del servidor ANTES de cualquier petición ───
-    // Si el estado de la app ya sabe que el servidor está offline, o si no hay
-    // drives cargados (lo que significa que no hay telemetría activa del agente),
-    // bloqueamos inmediatamente sin hacer ninguna petición de red.
-    if (isServerOffline || drives.length === 0) {
-      console.warn(`[DiskAnalyzer ${timestamp}] ⚠️ Servidor offline o sin drives detectados — bloqueando escaneo inmediatamente. isServerOffline=${isServerOffline}, drives.length=${drives.length}`);
-      const errorMsg = '⚠️ El servidor local de monitoreo no está encendido. Para escanear el disco y obtener métricas reales, primero debes ejecutar el servidor local en tu equipo.';
+    // isServerOffline = true cuando:
+    //   a) El backend de Render no responde (error de red)
+    //   b) El agente local NO ha enviado métricas recientes (< 10 min) — aunque
+    //      haya datos viejos en la DB, no podemos hacer un escaneo en tiempo real
+    if (isServerOffline) {
+      const ageInfo = drives.length > 0
+        ? ' Los datos que ves corresponden a un escaneo anterior, no al estado actual del disco.'
+        : '';
+      const errorMsg = `⚠️ El agente local de monitoreo no está activo en tu equipo.${ageInfo} Para iniciar un escaneo en tiempo real, ejecuta el servidor local (.bat) primero.`;
+      console.warn(`[DiskAnalyzer ${timestamp}] ⚠️ isServerOffline=true — bloqueando escaneo. drives en caché: ${drives.length}`);
       setScanError(errorMsg);
-      setIsServerOffline(true);
       setShowServerModal(true);
       return; // Salir sin hacer ninguna petición de red
     }
