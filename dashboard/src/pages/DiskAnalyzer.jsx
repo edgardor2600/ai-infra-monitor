@@ -238,32 +238,31 @@ const DiskAnalyzer = () => {
     fetchLicenseInfo();
   }, []);
 
-  // ─── AUTO-RECONNECT: polling cada 15s cuando el agente está offline ───
-  // Cuando el usuario enciende el servidor, dentro de 15s el banner desaparece
-  // automáticamente sin necesidad de recargar la página
+  // ─── AUTO-RECONNECT con useRef ───
+  // wasOfflineRef rastrea si ESTABAMOS offline en el render anterior.
+  // Esto evita que el effect se dispare innecesariamente en el render inicial.
+  const wasOfflineRef = useRef(false);
+
   useEffect(() => {
-    if (!isServerOffline) return; // Solo hacer polling si estamos offline
+    const previouslyOffline = wasOfflineRef.current;
+    wasOfflineRef.current = isServerOffline;
 
-    console.log('[DiskAnalyzer] 🔄 Modo auto-reconnexión activo — verificando servidor cada 15s...');
-    const reconnectInterval = setInterval(async () => {
-      console.log('[DiskAnalyzer] 📱 Auto-reconnect: verificando si el agente ya está activo...');
-      await fetchDrives();
-    }, 15000);
-
-    return () => {
-      clearInterval(reconnectInterval);
-      console.log('[DiskAnalyzer] ⏹️ Auto-reconnect: intervalo cancelado (servidor detectado)');
-    };
-  }, [isServerOffline]);
-
-  // Cuando el agente vuelve a estar online, refrescar todos los datos
-  useEffect(() => {
-    if (!isServerOffline) {
-      console.log('[DiskAnalyzer] ✅ Agente detectado online — refrescando datos...');
+    if (isServerOffline) {
+      // Agente offline: iniciar polling cada 10s
+      console.log('[DiskAnalyzer] 🔄 Agente offline — auto-reconnect activo (cada 10s)...');
+      const reconnectInterval = setInterval(async () => {
+        console.log('[DiskAnalyzer] 📱 Verificando si el agente ya está activo...');
+        await fetchDrives();
+      }, 10000);
+      return () => clearInterval(reconnectInterval);
+    } else if (previouslyOffline) {
+      // Transición offline → online: refrescar todos los datos
+      console.log('[DiskAnalyzer] ✅ Agente vuelto online — refrescando scans, historial y alertas...');
       fetchScans();
       fetchCleanupHistory();
       fetchPurgeAlerts();
     }
+    // Si !isServerOffline y !previouslyOffline: mount inicial o ya estaba online → no hacer nada extra
   }, [isServerOffline]);
 
   useEffect(() => {
@@ -400,7 +399,7 @@ const DiskAnalyzer = () => {
       if (response.data.ok) {
         const scanId = response.data.scan_id;
         console.log(`[DiskAnalyzer ${timestamp}] ✅ Escaneo creado con scan_id=${scanId}, status=${response.data.status}`);
-        setIsServerOffline(false);
+        // NO llamar setIsServerOffline(false) aquí — solo fetchDrives() controla ese estado
         await fetchScanDetails(scanId);
         await fetchScans();
       }

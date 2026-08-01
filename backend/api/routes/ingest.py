@@ -56,32 +56,41 @@ async def ingest_metrics(batch: IngestBatch, authorization: Optional[str] = Head
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # If hostname is provided, resolve the correct host_id from the DB
-        # This handles the case where the agent falls back to host_id=1 but the real host has a different id
-        org_id = get_current_org_id(authorization)
+        # Resolve the correct host_id and org_id from DB
         resolved_host_id = batch.host_id
-        if batch.hostname:
+        target_org_id = None
+
+        if batch.host_id:
+            cursor.execute("SELECT id, org_id FROM hosts WHERE id = %s", (batch.host_id,))
+            hrow = cursor.fetchone()
+            if hrow:
+                resolved_host_id = hrow[0]
+                target_org_id = hrow[1]
+
+        if not target_org_id and batch.hostname:
+            cursor.execute("SELECT id, org_id FROM hosts WHERE hostname = %s ORDER BY id DESC LIMIT 1", (batch.hostname,))
+            hrow = cursor.fetchone()
+            if hrow:
+                resolved_host_id = hrow[0]
+                target_org_id = hrow[1]
+
+        if not target_org_id:
+            org_id_to_use = get_current_org_id(authorization)
             cursor.execute(
-                "SELECT id FROM hosts WHERE hostname = %s AND org_id = %s LIMIT 1",
-                (batch.hostname, org_id)
+                """
+                INSERT INTO hosts (hostname, org_id)
+                VALUES (%s, %s)
+                ON CONFLICT (hostname, org_id) DO UPDATE SET hostname = EXCLUDED.hostname
+                RETURNING id, org_id
+                """,
+                (batch.hostname or f"host-{batch.host_id}", org_id_to_use)
             )
-            row = cursor.fetchone()
-            if row:
-                resolved_host_id = row[0]
-                logger.info(f"Resolved hostname '{batch.hostname}' (org_id={org_id}) to host_id={resolved_host_id}")
-            else:
-                # Auto-register this hostname under current org_id
-                cursor.execute(
-                    """
-                    INSERT INTO hosts (hostname, org_id)
-                    VALUES (%s, %s)
-                    ON CONFLICT (hostname, org_id) DO UPDATE SET hostname = EXCLUDED.hostname
-                    RETURNING id
-                    """,
-                    (batch.hostname, org_id)
-                )
-                resolved_host_id = cursor.fetchone()[0]
-                logger.info(f"Auto-registered hostname '{batch.hostname}' as host_id={resolved_host_id} (org_id={org_id})")
+            hrow = cursor.fetchone()
+            resolved_host_id = hrow[0]
+            target_org_id = hrow[1]
+            logger.info(f"Auto-registered hostname '{batch.hostname}' as host_id={resolved_host_id} (org_id={target_org_id})")
+        else:
+            logger.info(f"Resolved metrics to host_id={resolved_host_id} (org_id={target_org_id})")
         
         # Insert into metrics_raw table using resolved host_id
         cursor.execute(
