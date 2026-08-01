@@ -230,17 +230,22 @@ def perform_scan_task(scan_id: int, host_id: int, drive: str = "C:"):
             or host_id == 1
         )
 
+        logger.info(f"[SCAN TASK] host_id={host_id}, hostname={hrow[0] if hrow else 'unknown'}, local_hostname={local_hostname}, is_local={is_local_host}")
+
         scan_results = None
         if is_local_host:
             try:
-                logger.info(f"Executing real-time local DiskScanner for host_id={host_id}, drive={drive}")
+                logger.info(f"[SCAN TASK] ⚡ Ejecutando DiskScanner local para host_id={host_id}, drive={drive}")
                 scanner = DiskScanner(host_id, drive=drive)
                 scan_results = scanner.scan_all_categories()
+                total_files = sum(c.get('file_count', 0) for c in scan_results.get('categories', {}).values() if isinstance(c, dict))
+                logger.info(f"[SCAN TASK] ✅ Scan local completado: {total_files} archivos encontrados, {scan_results.get('total_size_formatted', '?')} en {drive}")
             except Exception as scan_err:
-                logger.warning(f"Direct DiskScanner failed, checking fallback agent data: {scan_err}")
+                logger.warning(f"[SCAN TASK] ⚠️ DiskScanner local falló, buscando datos del agente en DB: {scan_err}")
 
         if not scan_results:
             # Check if agent scan results exist for this host as fallback
+            logger.info(f"[SCAN TASK] 🔍 Sin resultados locales — buscando telemetría del agente para host_id={host_id} en DB...")
             cursor.execute(
                 """
                 SELECT categories, total_size_bytes FROM disk_scans
@@ -319,10 +324,11 @@ def perform_scan_task(scan_id: int, host_id: int, drive: str = "C:"):
                             )
                 conn.commit()
                 cursor.close()
-                logger.info(f"Scan task completed using agent telemetry fallback for host_id={host_id}")
+                logger.info(f"[SCAN TASK] ✅ Scan completado usando telemetría del agente (fallback) para host_id={host_id}, scan_id={scan_id}")
                 return
             else:
-                logger.info(f"Host ID {host_id} es remoto y no tiene telemetría disponible.")
+                logger.warning(f"[SCAN TASK] ⚠️ Host {host_id} sin telemetría disponible y sin datos del agente — scan marcado como failed")
+                logger.info(f"[SCAN TASK] Host ID {host_id} es remoto y no tiene telemetría disponible.")
                 cursor.execute(
                     """
                     UPDATE disk_scans 
@@ -339,6 +345,7 @@ def perform_scan_task(scan_id: int, host_id: int, drive: str = "C:"):
                 conn.commit()
                 cursor.close()
                 return
+
         
         categories_with_disk_info = scan_results['categories'].copy()
         categories_with_disk_info['disk_info'] = scan_results.get('disk_info', {})
@@ -1217,7 +1224,7 @@ async def perform_cleanup(request: CleanupRequest, authorization: Optional[str] 
     Perform cleanup for selected categories.
     """
     org_id = get_current_org_id(authorization)
-    logger.info(f"Starting cleanup for scan_id={request.scan_id}, categories={request.categories}")
+    logger.info(f"[CLEANUP] 🧹 Iniciando cleanup — scan_id={request.scan_id}, org_id={org_id}, categorias={request.categories}, create_backup={request.create_backup}")
     
     conn = None
     try:
@@ -1271,6 +1278,11 @@ async def perform_cleanup(request: CleanupRequest, authorization: Optional[str] 
         local_hostname = socket.gethostname()
         is_local = (hrow and hrow[0] == local_hostname)
 
+        logger.info(f"[CLEANUP] Host info — host_id={host_id}, hostname={hrow[0] if hrow else 'unknown'}, local_hostname={local_hostname}, is_local={is_local}")
+        logger.info(f"[CLEANUP] Archivos por categoría:")
+        for cat_name, files in files_by_category.items():
+            logger.info(f"[CLEANUP]   {cat_name}: {len(files)} archivos")
+
         if is_local:
             cleaner = DiskCleaner(host_id, request.scan_id)
             cleanup_results = cleaner.cleanup_categories(
@@ -1314,6 +1326,8 @@ async def perform_cleanup(request: CleanupRequest, authorization: Optional[str] 
             task_id = cursor.fetchone()[0]
             conn.commit()
             cursor.close()
+            logger.info(f"[CLEANUP] ⏳ Tarea encolada para agente remoto — task_id={task_id}, operation_id={operation_id}, host_id={host_id}")
+            logger.info(f"[CLEANUP] ⚠️ IMPORTANTE: Los archivos NO serán eliminados hasta que el agente local recoja esta tarea")
             
             return {
                 "operation_id": operation_id,

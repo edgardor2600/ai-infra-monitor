@@ -301,17 +301,37 @@ const DiskAnalyzer = () => {
   };
 
   const startScan = async () => {
+    const timestamp = new Date().toISOString();
+    console.log(`[DiskAnalyzer ${timestamp}] 🚀 startScan() iniciado — drive: ${selectedDrive}, isServerOffline: ${isServerOffline}, drives.length: ${drives.length}`);
+
+    // ─── BUG #1 FIX: Validar estado del servidor ANTES de cualquier petición ───
+    // Si el estado de la app ya sabe que el servidor está offline, o si no hay
+    // drives cargados (lo que significa que no hay telemetría activa del agente),
+    // bloqueamos inmediatamente sin hacer ninguna petición de red.
+    if (isServerOffline || drives.length === 0) {
+      console.warn(`[DiskAnalyzer ${timestamp}] ⚠️ Servidor offline o sin drives detectados — bloqueando escaneo inmediatamente. isServerOffline=${isServerOffline}, drives.length=${drives.length}`);
+      const errorMsg = '⚠️ El servidor local de monitoreo no está encendido. Para escanear el disco y obtener métricas reales, primero debes ejecutar el servidor local en tu equipo.';
+      setScanError(errorMsg);
+      setIsServerOffline(true);
+      setShowServerModal(true);
+      return; // Salir sin hacer ninguna petición de red
+    }
+
     setLoading(true);
     setScanning(true);
     setAiReport(null);
     setScanError(null);
     
     try {
+      console.log(`[DiskAnalyzer ${timestamp}] 📡 Obteniendo lista de hosts...`);
       const hostsResponse = await api.get('/hosts');
       const hosts = hostsResponse.data.hosts || [];
+      console.log(`[DiskAnalyzer ${timestamp}] ✅ Hosts obtenidos: ${hosts.length}`, hosts.map(h => h.hostname || h.id));
       
       if (hosts.length === 0) {
-        setScanError('No se encontraron hosts. Asegúrate de que el servidor backend y el agente estén en ejecución.');
+        const errMsg = '⚠️ No se encontraron hosts registrados. El agente local debe estar en ejecución para registrar este equipo.';
+        console.warn(`[DiskAnalyzer ${timestamp}] ❌ Sin hosts registrados — bloqueando escaneo.`);
+        setScanError(errMsg);
         setIsServerOffline(true);
         setShowServerModal(true);
         setLoading(false);
@@ -320,22 +340,25 @@ const DiskAnalyzer = () => {
       }
 
       const hostId = hosts[0].id;
+      console.log(`[DiskAnalyzer ${timestamp}] 🔍 Iniciando escaneo en host_id=${hostId}, drive=${selectedDrive}...`);
       const response = await api.post('/disk-analyzer/scan', {
         host_id: hostId,
         drive: selectedDrive
       });
 
       if (response.data.ok) {
-        setIsServerOffline(false);
         const scanId = response.data.scan_id;
+        console.log(`[DiskAnalyzer ${timestamp}] ✅ Escaneo creado con scan_id=${scanId}, status=${response.data.status}`);
+        setIsServerOffline(false);
         await fetchScanDetails(scanId);
         await fetchScans();
       }
     } catch (error) {
-      console.error('Error starting scan:', error);
+      const isNetworkError = !error.response || error.code === 'ERR_NETWORK';
+      console.error(`[DiskAnalyzer ${timestamp}] ❌ Error al iniciar escaneo — networkError=${isNetworkError}`, error?.response?.data || error.message);
       setIsServerOffline(true);
       setShowServerModal(true);
-      setScanError('⚠️ No se pudo conectar con el servidor local backend (http://127.0.0.1:8000). El servidor no se encuentra encendido.');
+      setScanError('⚠️ No se pudo conectar con el servidor backend. Verifica que el servidor local esté en ejecución.');
       setScanning(false);
     } finally {
       setLoading(false);
@@ -509,14 +532,22 @@ const DiskAnalyzer = () => {
 
   const pollTaskCompletion = async (taskId, operationId) => {
     let attempts = 0;
-    const maxAttempts = 25;
+    // Máximo 30 intentos × 2s = 60 segundos de espera
+    const maxAttempts = 30;
+    const pollIntervalMs = 2000;
+    const startTime = new Date().toISOString();
+
+    console.log(`[DiskAnalyzer ${startTime}] 🔄 pollTaskCompletion iniciado — taskId=${taskId}, operationId=${operationId}`);
+
+    // ─── BUG #2 FIX: Estado inicial real, sin porcentaje artificial ───
+    // La barra NO sube artificialmente. Refleja el estado real de la tarea.
     setCleanupTaskState({
       isOpen: true,
       taskId,
       operationId,
       status: 'pending',
-      progressPercent: 15,
-      statusText: 'Orden encolada. Esperando que el Agente en tu equipo reciba la tarea...',
+      progressPercent: 20, // Fijo en 20% mientras está pending (esperando agente)
+      statusText: '⏳ Orden encolada. Esperando que el agente local en tu equipo reciba y procese la tarea...',
       filesDeleted: 0,
       sizeFreed: 0,
       errors: [],
@@ -524,9 +555,9 @@ const DiskAnalyzer = () => {
     });
 
     while (attempts < maxAttempts) {
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, pollIntervalMs));
       attempts++;
-      const currentPct = Math.min(25 + attempts * 3, 90);
+      const elapsed = attempts * (pollIntervalMs / 1000);
 
       try {
         const res = await api.get(`/disk-analyzer/task-status/${taskId}`);
@@ -534,47 +565,77 @@ const DiskAnalyzer = () => {
         const currentStatus = taskData.status;
         const resultPayload = taskData.result || {};
 
-        if (currentStatus === 'in_progress') {
+        console.log(`[DiskAnalyzer] 📊 Poll #${attempts} (${elapsed}s) — taskId=${taskId}, status=${currentStatus}`);
+
+        // ─── Progreso basado en estado REAL de la tarea ───
+        if (currentStatus === 'pending') {
+          // Pendiente: barra fija en 20%, no sube artificialmente
+          setCleanupTaskState(prev => ({
+            ...prev,
+            status: 'pending',
+            progressPercent: 20,
+            statusText: `⏳ Esperando al agente local... (${elapsed}s transcurridos). El agente debe estar corriendo en tu equipo.`
+          }));
+        } else if (currentStatus === 'in_progress') {
+          // En progreso real: barra sube de 50% a 85% progresivamente
+          const inProgressPct = Math.min(50 + Math.floor((attempts / maxAttempts) * 35), 85);
+          console.log(`[DiskAnalyzer] ⚡ Tarea en progreso activo — ${inProgressPct}%`);
           setCleanupTaskState(prev => ({
             ...prev,
             status: 'in_progress',
-            progressPercent: Math.max(prev.progressPercent, currentPct),
-            statusText: '⚡ El Agente está procesando y eliminando los archivos físicos en tu equipo...'
+            progressPercent: inProgressPct,
+            statusText: '⚡ El agente está eliminando los archivos físicos en tu equipo...'
           }));
         } else if (currentStatus === 'completed' || currentStatus === 'completed_with_warnings') {
+          const filesDeleted = resultPayload.files_deleted || 0;
+          const sizeFreed = resultPayload.size_freed || 0;
+          console.log(`[DiskAnalyzer] ✅ Limpieza completada — ${filesDeleted} archivos, ${sizeFreed} bytes liberados, backup: ${resultPayload.backup_path}`);
           setCleanupTaskState(prev => ({
             ...prev,
             status: currentStatus,
             progressPercent: 100,
-            statusText: currentStatus === 'completed' ? '✅ ¡Limpieza física completada con éxito!' : '⚠️ Limpieza completada con algunas advertencias.',
-            filesDeleted: resultPayload.files_deleted || 0,
-            sizeFreed: resultPayload.size_freed || 0,
+            statusText: currentStatus === 'completed'
+              ? `✅ ¡Limpieza física completada! Se eliminaron ${filesDeleted} archivos.`
+              : `⚠️ Limpieza completada con ${resultPayload.errors?.length || 0} advertencias.`,
+            filesDeleted,
+            sizeFreed,
             errors: resultPayload.errors || [],
             backupPath: resultPayload.backup_path
           }));
           return taskData;
         } else if (currentStatus === 'failed') {
+          console.error(`[DiskAnalyzer] ❌ Tarea fallida — errores:`, resultPayload.errors);
           setCleanupTaskState(prev => ({
             ...prev,
             status: 'failed',
             progressPercent: 100,
-            statusText: '❌ La orden de limpieza falló en el equipo remoto.',
-            errors: resultPayload.errors || ['Error en la eliminación física por el agente.']
+            statusText: '❌ La eliminación de archivos falló en el equipo. Los archivos NO fueron eliminados.',
+            errors: resultPayload.errors?.length
+              ? resultPayload.errors
+              : ['El agente reportó un error al intentar eliminar los archivos físicos.']
           }));
           return taskData;
         }
       } catch (err) {
-        console.warn('Error polling task status:', err);
+        console.warn(`[DiskAnalyzer] ⚠️ Error en poll #${attempts}:`, err.message);
+        // No romper el loop por error de red puntual
         if (attempts >= maxAttempts) break;
       }
     }
 
+    // ─── TIMEOUT: El agente nunca respondió ───
+    // BUG #2 FIX: Mensaje absolutamente claro que los archivos NO se borraron
+    console.warn(`[DiskAnalyzer] ⏱️ TIMEOUT — taskId=${taskId} no completó en ${maxAttempts * pollIntervalMs / 1000}s. Los archivos NO fueron eliminados.`);
     setCleanupTaskState(prev => ({
       ...prev,
       status: 'timeout',
-      progressPercent: 90,
-      statusText: '⏱️ El agente local tardó más de lo esperado en responder.',
-      errors: ['Verifica que el script iniciar_servidor.bat esté ejecutándose en tu computadora.']
+      progressPercent: 100,
+      statusText: '⏱️ Tiempo de espera agotado. El agente local no respondió.',
+      errors: [
+        '🚫 Los archivos NO fueron eliminados físicamente.',
+        'El agente local de monitoreo no respondió dentro del tiempo esperado (60 segundos).',
+        'Para ejecutar la limpieza, asegúrate de que el script iniciar_servidor_org_X.bat esté corriendo en tu equipo con esta ventana abierta.'
+      ]
     }));
   };
 
@@ -659,19 +720,47 @@ const DiskAnalyzer = () => {
   };
 
   const handleConfirmCleanup = async () => {
+    const timestamp = new Date().toISOString();
+    console.log(`[DiskAnalyzer ${timestamp}] 🧹 handleConfirmCleanup() — categorías: ${JSON.stringify(selectedCategories)}, isServerOffline: ${isServerOffline}`);
+
+    // ─── BUG #1 FIX aplicado también a limpieza ───
+    // Si el servidor está offline, no tiene sentido encolar una tarea de limpieza
+    // porque el agente no está corriendo para ejecutarla.
+    if (isServerOffline) {
+      console.warn(`[DiskAnalyzer ${timestamp}] ⚠️ Servidor offline — bloqueando limpieza`);
+      setCleanupModal(prev => ({ ...prev, isOpen: false }));
+      setScanError('⚠️ No se puede ejecutar la limpieza: el servidor local de monitoreo no está en ejecución. El agente local es necesario para eliminar archivos físicamente en tu equipo.');
+      setShowServerModal(true);
+      return;
+    }
+
     setCleanupInProgress(true);
     setCleanupModal(prev => ({ ...prev, isOpen: false }));
 
     try {
+      console.log(`[DiskAnalyzer ${timestamp}] 📡 POST /disk-analyzer/cleanup — scan_id=${currentScan.scan_id}`);
       const response = await api.post('/disk-analyzer/cleanup', {
         scan_id: currentScan.scan_id,
         categories: selectedCategories,
         create_backup: true
       });
 
+      console.log(`[DiskAnalyzer ${timestamp}] 📥 Respuesta cleanup:`, {
+        ok: response.data.ok,
+        task_id: response.data.task_id,
+        operation_id: response.data.operation_id,
+        files_deleted: response.data.files_deleted,
+        size_freed: response.data.size_freed
+      });
+
       if (response.data.ok || response.data.task_id) {
         if (response.data.task_id) {
+          // Tarea encolada para el agente local — hacer polling
+          console.log(`[DiskAnalyzer ${timestamp}] ⏳ Tarea ${response.data.task_id} encolada — iniciando polling...`);
           await pollTaskCompletion(response.data.task_id, response.data.operation_id);
+        } else {
+          // Limpieza ejecutada directamente (modo local)
+          console.log(`[DiskAnalyzer ${timestamp}] ✅ Limpieza directa completada — ${response.data.files_deleted} archivos, ${response.data.size_freed} bytes`);
         }
         await fetchScanDetails(currentScan.scan_id);
         await fetchScans();
@@ -679,8 +768,9 @@ const DiskAnalyzer = () => {
         setSelectedCategories([]);
       }
     } catch (error) {
-      console.error('Error performing cleanup:', error);
-      alert('Error al realizar la limpieza: ' + (error.response?.data?.detail || error.message));
+      const detail = error.response?.data?.detail || error.message;
+      console.error(`[DiskAnalyzer ${timestamp}] ❌ Error en cleanup:`, detail, error);
+      alert('Error al realizar la limpieza: ' + detail);
     } finally {
       setCleanupInProgress(false);
     }
@@ -1961,16 +2051,25 @@ const DiskAnalyzer = () => {
 
               {/* Timeout agent launcher helper */}
               {cleanupTaskState.status === 'timeout' && (
-                <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '1rem', borderRadius: '10px', color: '#fef08a' }}>
-                  <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.875rem' }}>
-                    El servidor de monitoreo en tu computadora parece estar apagado o en pausa. Haz clic abajo para encenderlo.
-                  </p>
+                <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.4)', padding: '1.25rem', borderRadius: '10px', color: '#fca5a5' }}>
+                  {/* BUG #2 FIX: Mensaje absolutamente claro que los archivos NO fueron eliminados */}
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', marginBottom: '1rem' }}>
+                    <span style={{ fontSize: '1.5rem', lineHeight: 1 }}>🚫</span>
+                    <div>
+                      <p style={{ margin: '0 0 0.4rem 0', fontSize: '1rem', fontWeight: 700, color: '#ef4444' }}>
+                        Los archivos NO fueron eliminados
+                      </p>
+                      <p style={{ margin: 0, fontSize: '0.875rem', color: '#fca5a5', lineHeight: 1.5 }}>
+                        El agente local de monitoreo no respondió en 60 segundos. La limpieza física <strong>no se ejecutó</strong>. Para que los archivos sean eliminados realmente, el agente debe estar activo en tu equipo con la ventana del servidor abierta.
+                      </p>
+                    </div>
+                  </div>
                   <button
                     onClick={() => {
                       setCleanupTaskState(prev => ({ ...prev, isOpen: false }));
                       setShowServerModal(true);
                     }}
-                    style={{ background: '#f59e0b', color: '#0f172a', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', fontWeight: 700, cursor: 'pointer' }}
+                    style={{ background: '#f59e0b', color: '#0f172a', border: 'none', padding: '0.6rem 1.25rem', borderRadius: '6px', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}
                   >
                     ⚡ Iniciar Servidor Local (.bat)
                   </button>
