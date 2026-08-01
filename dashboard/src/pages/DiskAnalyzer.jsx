@@ -243,26 +243,53 @@ const DiskAnalyzer = () => {
   // Esto evita que el effect se dispare innecesariamente en el render inicial.
   const wasOfflineRef = useRef(false);
 
+  // ─── MANEJADOR DE RECONEXIÓN Y VERIFICACIÓN EN TIEMPO REAL ───
+  const handleReconnect = async () => {
+    setLoading(true);
+    try {
+      setScanError(null);
+      const isLive = await fetchDrives();
+      await fetchScans();
+      await fetchLicenseInfo();
+      await fetchPurgeAlerts();
+      if (isLive) {
+        setIsServerOffline(false);
+        setScanError(null);
+        setShowServerModal(false);
+      }
+    } catch (err) {
+      console.error('[DiskAnalyzer] ❌ Error al reanudar conexión:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     const previouslyOffline = wasOfflineRef.current;
     wasOfflineRef.current = isServerOffline;
 
-    if (isServerOffline) {
-      // Agente offline: iniciar polling cada 10s
-      console.log('[DiskAnalyzer] 🔄 Agente offline — auto-reconnect activo (cada 10s)...');
-      const reconnectInterval = setInterval(async () => {
-        console.log('[DiskAnalyzer] 📱 Verificando si el agente ya está activo...');
-        await fetchDrives();
-      }, 10000);
-      return () => clearInterval(reconnectInterval);
-    } else if (previouslyOffline) {
-      // Transición offline → online: refrescar todos los datos
-      console.log('[DiskAnalyzer] ✅ Agente vuelto online — refrescando scans, historial y alertas...');
+    // Sondeo periódico continuo de baja frecuencia cuando está online (cada 15s) o alta frecuencia cuando está offline (cada 3s)
+    const intervalMs = isServerOffline ? 3000 : 15000;
+    console.log(`[DiskAnalyzer] 🔄 Polling de conectividad activo (cada ${intervalMs / 1000}s)...`);
+
+    const reconnectInterval = setInterval(async () => {
+      const isLive = await fetchDrives();
+      if (isLive) {
+        setScanError(null);
+        setIsServerOffline(false);
+        setShowServerModal(false);
+      }
+    }, intervalMs);
+
+    if (previouslyOffline && !isServerOffline) {
+      console.log('[DiskAnalyzer] ✅ Agente reconectado — refrescando datos...');
+      setScanError(null);
       fetchScans();
       fetchCleanupHistory();
       fetchPurgeAlerts();
     }
-    // Si !isServerOffline y !previouslyOffline: mount inicial o ya estaba online → no hacer nada extra
+
+    return () => clearInterval(reconnectInterval);
   }, [isServerOffline]);
 
   useEffect(() => {
@@ -294,6 +321,7 @@ const DiskAnalyzer = () => {
         ? `${Math.round(agentAgeSeconds / 60)} minutos` : 'desconocido';
 
       if (isAgentLive) {
+        setScanError(null); // Quitar el aviso en pantalla cuando el agente se reconecta
         console.log(`[DiskAnalyzer] ✅ Agente activo — última telemetría hace ${ageMsg} — ${availableDrives.length} drive(s)`);
       } else {
         console.warn(`[DiskAnalyzer] ⚠️ Agente NO activo — último dato hace ${ageMsg} — drives en DB: ${availableDrives.length} (datos desactualizados)`);
@@ -302,11 +330,13 @@ const DiskAnalyzer = () => {
       if (availableDrives.length > 0 && !selectedDrive) {
         setSelectedDrive(availableDrives[0].device || 'C:');
       }
+      return isAgentLive;
     } catch (error) {
       console.error('[DiskAnalyzer] ❌ Error fetching drives:', error);
       if (!error.response || error.code === 'ERR_NETWORK') {
         setIsServerOffline(true);
       }
+      return false;
     }
   };
 
@@ -1218,14 +1248,14 @@ const DiskAnalyzer = () => {
             <span style={{ fontSize: '1.75rem', lineHeight: '1' }}>🔴</span>
             <div style={{ flex: 1 }}>
               <h4 style={{ margin: 0, color: '#fca5a5', fontSize: '1.05rem', fontWeight: '700' }}>
-                Servidor Local Backend Desconectado (127.0.0.1:8000)
+                Agente Local de Monitoreo Desconectado
               </h4>
               <p style={{ margin: '0.35rem 0 0 0', fontSize: '0.9rem', color: '#cbd5e1', lineHeight: '1.45' }}>
-                {scanError || 'El servidor backend de monitoreo no se encuentra en ejecución. No es posible actualizar los parámetros del disco ni realizar un escaneo en tiempo real sin encender el servidor.'}
+                {scanError || 'El agente local de monitoreo no está activo en tu equipo. Para realizar escaneos en tiempo real y ejecutar limpiezas físicas, enciende el servidor/agente local.'}
               </p>
               {currentScan && (
                 <p style={{ margin: '0.4rem 0 0 0', fontSize: '0.82rem', color: '#f59e0b', fontWeight: '600' }}>
-                  ⚠️ Atención: Los datos visualizados abajo corresponden a un escaneo guardado anteriormente. Encender el servidor permitirá actualizar las métricas actuales.
+                  ⚠️ Atención: Los datos visualizados abajo corresponden a un escaneo guardado anteriormente. Encender el agente local permitirá actualizar las métricas actuales automáticamente.
                 </p>
               )}
             </div>
@@ -1253,13 +1283,8 @@ const DiskAnalyzer = () => {
             </button>
 
             <button
-              onClick={async () => {
-                setLoading(true);
-                await fetchDrives();
-                await fetchScans();
-                await fetchLicenseInfo();
-                setLoading(false);
-              }}
+              onClick={handleReconnect}
+              disabled={loading}
               style={{
                 background: 'rgba(255, 255, 255, 0.08)',
                 color: '#e2e8f0',
@@ -1268,10 +1293,10 @@ const DiskAnalyzer = () => {
                 borderRadius: '8px',
                 fontWeight: '600',
                 fontSize: '0.88rem',
-                cursor: 'pointer'
+                cursor: loading ? 'wait' : 'pointer'
               }}
             >
-              🔄 Reintentar Conexión
+              🔄 {loading ? 'Verificando Conexión...' : 'Reanudar Conexión'}
             </button>
           </div>
         </div>
@@ -2011,7 +2036,26 @@ const DiskAnalyzer = () => {
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <button
+                onClick={handleReconnect}
+                disabled={loading}
+                style={{
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '0.6rem 1.25rem',
+                  borderRadius: '8px',
+                  cursor: loading ? 'wait' : 'pointer',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  fontSize: '0.88rem'
+                }}
+              >
+                🔄 {loading ? 'Verificando...' : 'Reanudar Conexión'}
+              </button>
               <button
                 onClick={() => setShowServerModal(false)}
                 style={{ padding: '0.6rem 1.25rem', background: 'rgba(255, 255, 255, 0.1)', color: '#e2e8f0', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
