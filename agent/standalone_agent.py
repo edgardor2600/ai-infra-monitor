@@ -249,13 +249,14 @@ def scan_local_cleanup_paths():
                             fsize = os.path.getsize(fp)
                             cat_size += fsize
                             cat_count += 1
-                            if len(cat_files) < 10:
-                                cat_files.append({
-                                    "path": fp,
-                                    "size": fsize,
-                                    "is_safe": cat_meta['is_safe_auto'],
-                                    "risk_level": cat_meta['risk_level']
-                                })
+                            # SIN LÍMITE: incluir TODOS los archivos reales para que el cleanup
+                            # tenga rutas válidas y pueda eliminarlos físicamente
+                            cat_files.append({
+                                "path": fp,
+                                "size": fsize,
+                                "is_safe": cat_meta['is_safe_auto'],
+                                "risk_level": cat_meta['risk_level']
+                            })
                         except Exception:
                             continue
             except Exception:
@@ -271,6 +272,7 @@ def scan_local_cleanup_paths():
             "file_count": cat_count,
             "files": cat_files
         }
+        logger.info(f"[SCAN] {cat_id}: {cat_count} archivos, {cat_size} bytes, {len(cat_files)} rutas incluidas")
         
     return categories_res, total_size_bytes
 
@@ -312,6 +314,8 @@ def execute_agent_task(task, host_id, org_id):
                 fp = finfo.get('path')
                 fsize = finfo.get('size', 0)
                 if not fp or not os.path.exists(fp):
+                    if fp:
+                        logger.debug(f"   ⏩ Ruta no encontrada (puede ya haber sido eliminada): {fp}")
                     continue
                 try:
                     if create_backup and backup_path:
@@ -335,6 +339,50 @@ def execute_agent_task(task, host_id, org_id):
                     err_msg = f"Error borrando {fp}: {err}"
                     errors.append(err_msg)
                     logger.warning(f"   ⚠️ {err_msg}")
+
+    elif task_type == 'run_disk_scan':
+        # ─── NUEVO: Escaneo real del disco pedido por el backend ───
+        # El backend ha detectado que el agente está vivo y le pide un scan real
+        logger.info(f"🔍 Ejecutando escaneo real del disco (pedido por backend) para scan_id={scan_id}...")
+        try:
+            cat_res, tot_size = scan_local_cleanup_paths()
+            
+            is_win = os.name == 'nt'
+            drive_name = payload.get('drive', 'C:' if is_win else '/')
+            try:
+                disk = psutil.disk_usage('C:\\' if is_win else '/')
+                tot_disk, usd_disk, fre_disk, pct_disk = disk.total, disk.used, disk.free, disk.percent
+            except Exception:
+                tot_disk, usd_disk, fre_disk, pct_disk = 0, 0, 0, 0.0
+
+            disk_info_scan = {
+                "drive": drive_name, "device": drive_name,
+                "total": tot_disk, "used": usd_disk, "free": fre_disk,
+                "used_percent": pct_disk, "percent_used": pct_disk
+            }
+
+            scan_payload_data = {
+                "host_id": host_id,
+                "org_id": org_id,
+                "drive": drive_name,
+                "total_size_bytes": tot_size,
+                "disk_info": disk_info_scan,
+                "categories": cat_res,
+                "existing_scan_id": scan_id  # Para actualizar el scan existente, no crear uno nuevo
+            }
+            http_post(f"{BACKEND_URL}/api/v1/disk-analyzer/agent-scan-results", scan_payload_data)
+            
+            total_files = sum(v.get('file_count', 0) for v in cat_res.values() if isinstance(v, dict))
+            logger.info(f"✅ Escaneo real completado: {total_files} archivos en {len(cat_res)} categorías, {tot_size} bytes")
+            
+            # Marcar la tarea como completada con los datos del scan
+            files_deleted = total_files  # Para el resultado del task
+            size_freed = tot_size
+        except Exception as scan_err:
+            err_msg = f"Error en escaneo real del disco: {scan_err}"
+            errors.append(err_msg)
+            logger.error(f"❌ {err_msg}")
+
 
     elif task_type == 'purge_backup':
         bpath = payload.get('backup_path')

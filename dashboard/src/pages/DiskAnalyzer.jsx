@@ -238,6 +238,34 @@ const DiskAnalyzer = () => {
     fetchLicenseInfo();
   }, []);
 
+  // ─── AUTO-RECONNECT: polling cada 15s cuando el agente está offline ───
+  // Cuando el usuario enciende el servidor, dentro de 15s el banner desaparece
+  // automáticamente sin necesidad de recargar la página
+  useEffect(() => {
+    if (!isServerOffline) return; // Solo hacer polling si estamos offline
+
+    console.log('[DiskAnalyzer] 🔄 Modo auto-reconnexión activo — verificando servidor cada 15s...');
+    const reconnectInterval = setInterval(async () => {
+      console.log('[DiskAnalyzer] 📱 Auto-reconnect: verificando si el agente ya está activo...');
+      await fetchDrives();
+    }, 15000);
+
+    return () => {
+      clearInterval(reconnectInterval);
+      console.log('[DiskAnalyzer] ⏹️ Auto-reconnect: intervalo cancelado (servidor detectado)');
+    };
+  }, [isServerOffline]);
+
+  // Cuando el agente vuelve a estar online, refrescar todos los datos
+  useEffect(() => {
+    if (!isServerOffline) {
+      console.log('[DiskAnalyzer] ✅ Agente detectado online — refrescando datos...');
+      fetchScans();
+      fetchCleanupHistory();
+      fetchPurgeAlerts();
+    }
+  }, [isServerOffline]);
+
   useEffect(() => {
     if (scanning && currentScan) {
       const interval = setInterval(() => {
@@ -288,7 +316,8 @@ const DiskAnalyzer = () => {
       const response = await api.get('/disk-analyzer/scans?limit=10');
       const scanList = response.data.scans || [];
       setScans(scanList);
-      setIsServerOffline(false);
+      // IMPORTANTE: NO sobreescribir isServerOffline aquí
+      // fetchDrives() es quien maneja correctamente ese estado basado en frescura de telemetría
 
       // Auto-load most recent completed scan for current org on page load / reload
       if (scanList.length > 0 && !currentScan) {

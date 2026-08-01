@@ -23,6 +23,7 @@ class AgentScanPayload(BaseModel):
     total_size_bytes: int = Field(..., description="Total size in bytes")
     disk_info: Optional[Dict] = Field(None, description="Global disk capacity info (total, used, free, percent_used)")
     categories: Dict[str, Dict] = Field(..., description="Scan categories with files and sizes")
+    existing_scan_id: Optional[int] = Field(None, description="If set, UPDATE this scan_id instead of INSERT a new one")
 
 
 class CategoryInfo(BaseModel):

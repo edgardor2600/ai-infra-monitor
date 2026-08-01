@@ -261,8 +261,47 @@ def perform_scan_task(scan_id: int, host_id: int, drive: str = "C:"):
                 logger.warning(f"[SCAN TASK] ⚠️ DiskScanner local falló, buscando datos del agente en DB: {scan_err}")
 
         if not scan_results:
-            # Check if agent scan results exist for this host as fallback
-            logger.info(f"[SCAN TASK] 🔍 Sin resultados locales — buscando telemetría del agente para host_id={host_id} en DB...")
+            # ─── VERIFICAR SI EL AGENTE LOCAL ESTÁ ACTIVO (métricas recientes) ───
+            AGENT_LIVE_THRESHOLD_SECONDS = 600  # 10 minutos
+            cursor.execute(
+                "SELECT MAX(created_at) FROM metrics_raw WHERE host_id = %s",
+                (host_id,)
+            )
+            last_metric_row = cursor.fetchone()
+            last_metric_at = last_metric_row[0] if last_metric_row else None
+            agent_is_live = False
+            if last_metric_at:
+                last_metric_naive = last_metric_at.replace(tzinfo=None) if hasattr(last_metric_at, 'tzinfo') and last_metric_at.tzinfo else last_metric_at
+                age_s = (datetime.utcnow() - last_metric_naive).total_seconds()
+                agent_is_live = age_s < AGENT_LIVE_THRESHOLD_SECONDS
+                logger.info(f"[SCAN TASK] Agente - última telemetría hace {int(age_s)}s — is_alive={agent_is_live}")
+
+            if agent_is_live:
+                # ─── AGENTE VIVO: Encolar tarea de escaneo para ejecutarse localmente ───
+                # El agente correrá scan_local_cleanup_paths() en la máquina real del usuario
+                # y enviará resultados reales via /agent-scan-results
+                logger.info(f"[SCAN TASK] ⚡ Agente activo — creando tarea 'run_disk_scan' para que el agente escanee el disco real...")
+                task_payload = {
+                    "scan_id": scan_id,
+                    "drive": drive
+                }
+                cursor.execute(
+                    """
+                    INSERT INTO cleanup_tasks (host_id, org_id, scan_id, task_type, payload, status)
+                    VALUES (%s, (SELECT org_id FROM disk_scans WHERE id = %s LIMIT 1), %s, 'run_disk_scan', %s, 'pending')
+                    RETURNING id
+                    """,
+                    (host_id, scan_id, scan_id, json.dumps(task_payload))
+                )
+                task_id = cursor.fetchone()[0]
+                conn.commit()
+                logger.info(f"[SCAN TASK] ✅ Tarea de escaneo #{task_id} encolada para agente (host_id={host_id}) — el scan_id={scan_id} se actualizará cuando el agente complete")
+                # El scan queda en 'running' hasta que el agente envíe resultados via /agent-scan-results
+                cursor.close()
+                return
+
+            # ─── AGENTE OFFLINE: Usar fallback con datos existentes en DB ───
+            logger.info(f"[SCAN TASK] 🔍 Agente offline — buscando escaneo previo en DB para host_id={host_id}...")
             cursor.execute(
                 """
                 SELECT categories, total_size_bytes FROM disk_scans
@@ -493,17 +532,41 @@ async def receive_agent_scan_results(payload: AgentScanPayload):
         if payload.disk_info:
             categories_with_disk_info['disk_info'] = payload.disk_info
 
-        cursor.execute(
-            """
-            INSERT INTO disk_scans (host_id, org_id, status, total_size_bytes, categories, started_at, completed_at)
-            VALUES (%s, %s, 'completed', %s, %s, NOW(), NOW())
-            RETURNING id
-            """,
-            (payload.host_id, org_id, payload.total_size_bytes, json.dumps(categories_with_disk_info))
-        )
-        scan_id = cursor.fetchone()[0]
-        conn.commit()
+        if payload.existing_scan_id:
+            # ─── ACTUALIZAR scan existente (flujo 'run_disk_scan' task) ───
+            # El agente completa el scan que el backend había dejado en 'running'
+            logger.info(f"[AGENT-SCAN] Actualizando scan existente id={payload.existing_scan_id} con resultados reales del agente")
+            cursor.execute(
+                """
+                UPDATE disk_scans
+                SET status = 'completed',
+                    total_size_bytes = %s,
+                    categories = %s,
+                    completed_at = NOW()
+                WHERE id = %s
+                """,
+                (payload.total_size_bytes, json.dumps(categories_with_disk_info), payload.existing_scan_id)
+            )
+            conn.commit()
+            scan_id = payload.existing_scan_id
 
+            # Limpiar cleanup_items del scan anterior e insertar los nuevos
+            cursor.execute("DELETE FROM cleanup_items WHERE scan_id = %s", (scan_id,))
+            conn.commit()
+        else:
+            # ─── INSERTAR nuevo scan (flujo inicial del agente al arrancar) ───
+            cursor.execute(
+                """
+                INSERT INTO disk_scans (host_id, org_id, status, total_size_bytes, categories, started_at, completed_at)
+                VALUES (%s, %s, 'completed', %s, %s, NOW(), NOW())
+                RETURNING id
+                """,
+                (payload.host_id, org_id, payload.total_size_bytes, json.dumps(categories_with_disk_info))
+            )
+            scan_id = cursor.fetchone()[0]
+            conn.commit()
+
+        total_files = 0
         for cat_name, cat_data in payload.categories.items():
             if isinstance(cat_data, dict):
                 for file_info in cat_data.get('files', []):
@@ -523,8 +586,10 @@ async def receive_agent_scan_results(payload: AgentScanPayload):
                             file_info.get('risk_level', 'low')
                         )
                     )
+                    total_files += 1
         conn.commit()
         cursor.close()
+        logger.info(f"[AGENT-SCAN] ✅ Scan id={scan_id} guardado con {total_files} rutas reales de archivos")
         return {"ok": True, "scan_id": scan_id}
     except Exception as e:
         logger.error(f"Error saving agent scan results: {e}")
@@ -532,6 +597,7 @@ async def receive_agent_scan_results(payload: AgentScanPayload):
     finally:
         if conn:
             conn.close()
+
 
 
 @router.post("/analyze-ai", response_model=dict)
