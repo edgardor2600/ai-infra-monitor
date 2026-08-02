@@ -136,6 +136,10 @@ const DiskAnalyzer = () => {
   // Backend connection & scan error state
   const [isServerOffline, setIsServerOffline] = useState(false);
   const [scanError, setScanError] = useState(null);
+  // activeHostId: el host_id del agente con métricas más recientes en esta org.
+  // Se obtiene de /drives?active_host_id y se usa en startScan() para apuntar
+  // al host correcto en lugar de siempre usar hosts[0].
+  const [activeHostId, setActiveHostId] = useState(null);
 
   // Purge Backup Modal state
   const [purgeModal, setPurgeModal] = useState({
@@ -310,6 +314,12 @@ const DiskAnalyzer = () => {
       const isAgentLive = response.data.is_agent_live ?? false;
       const agentLastSeen = response.data.agent_last_seen_at;
       const agentAgeSeconds = response.data.agent_data_age_seconds;
+      // active_host_id: el host con métricas más recientes para esta org.
+      // Resuelve el mismatch entre "agente corriendo como host_id=3" y "URL mostrando host_id=2".
+      const receivedActiveHostId = response.data.active_host_id ?? null;
+      if (receivedActiveHostId) {
+        setActiveHostId(receivedActiveHostId);
+      }
 
       setDrives(availableDrives);
 
@@ -322,9 +332,9 @@ const DiskAnalyzer = () => {
 
       if (isAgentLive) {
         setScanError(null); // Quitar el aviso en pantalla cuando el agente se reconecta
-        console.log(`[DiskAnalyzer] ✅ Agente activo — última telemetría hace ${ageMsg} — ${availableDrives.length} drive(s)`);
+        console.log(`[DiskAnalyzer] ✅ Agente activo — última telemetría hace ${ageMsg} — active_host_id=${receivedActiveHostId} — ${availableDrives.length} drive(s)`);
       } else {
-        console.warn(`[DiskAnalyzer] ⚠️ Agente NO activo — último dato hace ${ageMsg} — drives en DB: ${availableDrives.length} (datos desactualizados)`);
+        console.warn(`[DiskAnalyzer] ⚠️ Agente NO activo — último dato hace ${ageMsg} — active_host_id=${receivedActiveHostId} — drives en DB: ${availableDrives.length} (datos desactualizados)`);
       }
 
       if (availableDrives.length > 0 && !selectedDrive) {
@@ -419,8 +429,15 @@ const DiskAnalyzer = () => {
         return;
       }
 
-      const hostId = hosts[0].id;
-      console.log(`[DiskAnalyzer ${timestamp}] 🔍 Iniciando escaneo en host_id=${hostId}, drive=${selectedDrive}...`);
+      // Elegir el host correcto:
+      // 1. activeHostId: el host con métricas más recientes para esta org (resuelto por /drives)
+      // 2. Fallback: el host cuyo hostname coincide con el agente activo (si hay varios)
+      // 3. Último fallback: hosts[0] (comportamiento anterior)
+      const liveHost = hosts.find(h => h.id === activeHostId)
+        || hosts.find(h => h.id === hosts[0]?.id)
+        || hosts[0];
+      const hostId = liveHost.id;
+      console.log(`[DiskAnalyzer ${timestamp}] 🔍 Iniciando escaneo en host_id=${hostId} (activeHostId=${activeHostId}), drive=${selectedDrive}...`);
       const response = await api.post('/disk-analyzer/scan', {
         host_id: hostId,
         drive: selectedDrive

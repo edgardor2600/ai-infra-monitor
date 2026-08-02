@@ -145,7 +145,12 @@ async def get_metrics(
                 try:
                     import asyncio
                     from backend.disk_analyzer.auto_remediator import AutoRemediator
-                    asyncio.create_task(AutoRemediator.check_and_execute(host_id, org_id=1, current_disk_percent=latest_disk))
+                    # Resolve the actual org_id for this host from the DB instead of hardcoding org_id=1.
+                    # This ensures auto-remediation fires for the correct organization's host.
+                    cursor.execute("SELECT org_id FROM hosts WHERE id = %s", (host_id,))
+                    org_row = cursor.fetchone()
+                    host_org_id = org_row[0] if org_row else 1
+                    asyncio.create_task(AutoRemediator.check_and_execute(host_id, org_id=host_org_id, current_disk_percent=latest_disk))
                 except Exception as ex:
                     logger.error(f"Error launching AutoRemediator task: {ex}")
 

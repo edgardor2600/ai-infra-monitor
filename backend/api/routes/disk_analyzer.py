@@ -131,7 +131,11 @@ from backend.db.connection import get_db_connection
 
 @router.get("/drives", response_model=dict)
 async def get_drives(host_id: Optional[int] = None, authorization: Optional[str] = Header(None)):
-    """Get list of available disk drives and free space info for host using agent telemetry."""
+    """Get list of available disk drives and free space info for host using agent telemetry.
+    
+    Returns active_host_id so the frontend always knows which host is currently transmitting
+    metrics, avoiding the host_id mismatch that causes CPU 0% and 'Agent Disconnected' errors.
+    """
     org_id = get_current_org_id(authorization)
     conn = None
     try:
@@ -141,39 +145,47 @@ async def get_drives(host_id: Optional[int] = None, authorization: Optional[str]
         # Threshold: agente se considera "vivo" si envió métricas hace menos de 10 minutos
         AGENT_LIVE_THRESHOLD_SECONDS = 600
 
-        # Buscar la métrica más reciente para la organización (o fallback general)
+        # Buscar la métrica más reciente para la organización (o host específico)
+        # IMPORTANTE: siempre resolvemos el active_host_id del agente más reciente de la org
+        # para que el frontend sepa exactamente a qué host apuntar.
+        active_host_id = host_id  # valor inicial, puede sobreescribirse abajo
+
         if host_id:
             cursor.execute(
                 """
-                SELECT payload, created_at FROM metrics_raw 
-                WHERE host_id = %s
-                ORDER BY created_at DESC LIMIT 10
+                SELECT m.payload, m.created_at, m.host_id FROM metrics_raw m
+                WHERE m.host_id = %s
+                ORDER BY m.created_at DESC LIMIT 10
                 """,
                 (host_id,)
             )
         else:
+            # Sin host_id explícito: buscar el host con métricas MÁS RECIENTES de esta org
+            # Esto resuelve el caso de "agente corriendo como host_id=3 pero frontend ve host_id=2"
             cursor.execute(
                 """
-                SELECT m.payload, m.created_at FROM metrics_raw m
+                SELECT m.payload, m.created_at, m.host_id FROM metrics_raw m
                 JOIN hosts h ON m.host_id = h.id
                 WHERE h.org_id = %s
                 ORDER BY m.created_at DESC LIMIT 10
                 """,
                 (org_id,)
             )
-            
+
         rows = cursor.fetchall()
 
-        # Fallback si no hay métricas para la org específica: consultar cualquier métrica reciente
+        # Fallback si no hay métricas para la org: consultar cualquier métrica reciente
         if not rows:
             cursor.execute(
-                "SELECT payload, created_at FROM metrics_raw ORDER BY created_at DESC LIMIT 10;"
+                "SELECT payload, created_at, host_id FROM metrics_raw ORDER BY created_at DESC LIMIT 10;"
             )
             rows = cursor.fetchall()
 
         if rows:
             latest_row = rows[0]
             last_seen_at = latest_row[1]
+            # Capturar el host_id real del agente con métricas más recientes
+            active_host_id = latest_row[2] if latest_row[2] is not None else host_id
 
             # Verificar frescura de la telemetría con cálculo seguro de timezone
             now_utc = datetime.now(timezone.utc)
@@ -188,7 +200,7 @@ async def get_drives(host_id: Optional[int] = None, authorization: Optional[str]
 
             logger.info(
                 f"[DRIVES] Última telemetría del agente: {last_seen_iso} "
-                f"({int(age_seconds)}s atrás) — is_agent_live={is_agent_live}"
+                f"({int(age_seconds)}s atrás) — is_agent_live={is_agent_live} — active_host_id={active_host_id}"
             )
 
             # Buscar valores de disco en la lista de las últimas métricas
@@ -210,7 +222,7 @@ async def get_drives(host_id: Optional[int] = None, authorization: Optional[str]
                 used_bytes = max(0, total_bytes - free_bytes)
                 percent = float(disk_percent) if disk_percent is not None else round((used_bytes / max(1, total_bytes)) * 100, 2)
             else:
-                # Fallback predeterminado para C: si el agente está reportando pero las métricas no incluyen disco aún
+                # Fallback predeterminado para C: si el agente reporta pero las métricas no incluyen disco aún
                 total_bytes = 512 * (1024 ** 3)
                 free_bytes = 100 * (1024 ** 3)
                 used_bytes = total_bytes - free_bytes
@@ -224,12 +236,19 @@ async def get_drives(host_id: Optional[int] = None, authorization: Optional[str]
             return {
                 "drives": drives,
                 "is_agent_live": is_agent_live,
+                "active_host_id": active_host_id,
                 "agent_last_seen_at": last_seen_iso,
                 "agent_data_age_seconds": int(age_seconds)
             }
 
         # No hay registros en metrics_raw
-        return {"drives": [], "is_agent_live": False, "agent_last_seen_at": None, "agent_data_age_seconds": None}
+        return {
+            "drives": [],
+            "is_agent_live": False,
+            "active_host_id": None,
+            "agent_last_seen_at": None,
+            "agent_data_age_seconds": None
+        }
 
     except Exception as e:
         logger.warning(f"[DRIVES] Error fetching host disk metrics from DB: {e}")
@@ -238,7 +257,13 @@ async def get_drives(host_id: Optional[int] = None, authorization: Optional[str]
             conn.close()
 
     logger.info("[DRIVES] Sin telemetría disponible — agente no activo o nunca conectado")
-    return {"drives": [], "is_agent_live": False, "agent_last_seen_at": None, "agent_data_age_seconds": None}
+    return {
+        "drives": [],
+        "is_agent_live": False,
+        "active_host_id": None,
+        "agent_last_seen_at": None,
+        "agent_data_age_seconds": None
+    }
 
 
 def perform_scan_task(scan_id: int, host_id: int, drive: str = "C:"):
@@ -1936,40 +1961,63 @@ async def get_task_status(task_id: int, authorization: Optional[str] = Header(No
 
 @router.get("/download-launcher")
 async def download_launcher(os_type: str = "windows", authorization: Optional[str] = Header(None)):
-    """Generate and serve a customized 1-click launcher script (.bat or .sh) tailored for user's organization."""
+    """Generate and serve a customized 1-click launcher script (.bat or .sh) tailored for user's organization.
+    
+    CRITICAL: The generated script embeds AGENT_TOKEN (the user's JWT) and AGENT_ORG_ID so that
+    the agent authenticates with the backend using the same identity as the logged-in user.
+    This prevents the org_id mismatch that causes 'Agent Disconnected' and CPU 0% errors.
+    """
     org_id = get_current_org_id(authorization)
     backend_url = os.getenv("BACKEND_URL", "https://ai-infra-monitor-api.onrender.com").rstrip("/")
-    
+
+    # Extract the raw JWT token to embed it in the launcher script.
+    # The agent will use this token to authenticate with the backend, ensuring it registers
+    # under the correct org_id instead of falling back to org_id=1.
+    agent_token = ""
+    if authorization and authorization.startswith("Bearer "):
+        agent_token = authorization.split(" ", 1)[1].strip()
+
     if os_type.lower() in ["linux", "macos", "bash"]:
         content = f"""#!/bin/bash
+# ============================================================
+#  AI Infra Monitor — Agente de Monitoreo Local
+#  Organizacion ID: {org_id}
+#  Generado automaticamente para tu cuenta. No compartas este archivo.
+# ============================================================
 echo "========================================================"
-echo " 🚀 Iniciando Servidor de Monitoreo Local"
+echo " Iniciando Servidor de Monitoreo Local"
+echo " Organizacion ID: {org_id}"
 echo "========================================================"
 export BACKEND_URL="{backend_url}"
 export AGENT_ORG_ID="{org_id}"
+export AGENT_TOKEN="{agent_token}"
 
-curl -s "{backend_url}/agent/standalone_agent.py" -o standalone_agent.py || wget -q "{backend_url}/agent/standalone_agent.py" -O standalone_agent.py
+curl -s "{backend_url}/agent/standalone_agent.py" -o standalone_agent.py 2>/dev/null || \
+    wget -q "{backend_url}/agent/standalone_agent.py" -O standalone_agent.py 2>/dev/null
 
 if [ ! -f standalone_agent.py ]; then
     echo "[ERROR] No se pudo descargar standalone_agent.py. Verifica tu conexion a internet."
     exit 1
 fi
 
-echo " ⚡ Ejecutando servidor de monitoreo en vivo (Org ID: {org_id})..."
+echo " Ejecutando servidor de monitoreo en vivo (Org ID: {org_id})..."
 python3 standalone_agent.py
 """
         filename = f"iniciar_servidor_org_{org_id}.sh"
         media_type = "application/x-sh"
     else:
         content = f"""@echo off
-title AI Infra Monitor - Servidor de Monitoreo Local
+title AI Infra Monitor - Servidor de Monitoreo Local (Org {org_id})
 color 0A
 echo ========================================================
-echo  🚀 Iniciando Servidor de Monitoreo Local
+echo   AI Infra Monitor - Servidor de Monitoreo Local
+echo   Organizacion ID: {org_id}
+echo   Generado para tu cuenta. No compartas este archivo.
 echo ========================================================
 echo Conectando con la Organizacion ID: {org_id}...
 set BACKEND_URL={backend_url}
 set AGENT_ORG_ID={org_id}
+set AGENT_TOKEN={agent_token}
 
 python -c "import urllib.request; urllib.request.urlretrieve('%BACKEND_URL%/agent/standalone_agent.py', 'standalone_agent.py')" 2>nul
 if not exist standalone_agent.py (
@@ -1985,7 +2033,7 @@ if not exist standalone_agent.py (
 )
 
 echo.
-echo  ⚡ Servidor activado con exito. Mantén esta ventana abierta.
+echo   Servidor activado con exito para Org ID: {org_id}. Mantén esta ventana abierta.
 echo.
 python standalone_agent.py
 pause
