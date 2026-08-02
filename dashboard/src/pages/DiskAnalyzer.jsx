@@ -459,7 +459,10 @@ const DiskAnalyzer = () => {
       setScanning(false);
     } finally {
       setLoading(false);
-      setScanning(false);
+      // NO llamar setScanning(false) aquí.
+      // El scan puede quedar en status 'running' mientras el agente procesa la tarea.
+      // fetchScanDetails() ya llama setScanning(false) cuando status === 'completed'/'failed',
+      // y el useEffect [scanning, currentScan] mantiene el polling automático activo.
     }
   };
 
@@ -748,6 +751,8 @@ const DiskAnalyzer = () => {
           await pollTaskCompletion(response.data.task_id, response.data.operation_id);
         }
         setPurgeModal({ isOpen: false, item: null, loading: false, aiAnalysis: null, backupInfo: null });
+        // Auto-refresh: actualizar drives (espacio liberado) e historial
+        await fetchDrives();
         if (currentScan?.scan_id) {
           await fetchScanDetails(currentScan.scan_id);
         }
@@ -852,17 +857,30 @@ const DiskAnalyzer = () => {
 
       if (response.data.ok || response.data.task_id) {
         if (response.data.task_id) {
-          // Tarea encolada para el agente local — hacer polling
+          // Tarea encolada para el agente local — hacer polling hasta que complete
           console.log(`[DiskAnalyzer ${timestamp}] ⏳ Tarea ${response.data.task_id} encolada — iniciando polling...`);
           await pollTaskCompletion(response.data.task_id, response.data.operation_id);
         } else {
           // Limpieza ejecutada directamente (modo local)
           console.log(`[DiskAnalyzer ${timestamp}] ✅ Limpieza directa completada — ${response.data.files_deleted} archivos, ${response.data.size_freed} bytes`);
         }
-        await fetchScanDetails(currentScan.scan_id);
-        await fetchScans();
+        // ─── AUTO-REFRESH POST-LIMPIEZA ───
+        // Refrescar drives primero para mostrar el nuevo % de disco
+        await fetchDrives();
         await fetchCleanupHistory();
         setSelectedCategories([]);
+        // Refrescar el scan actual para mostrar categorías actualizadas.
+        // Esperamos 1.5s porque el agente puede tardar un instante en publicar
+        // los resultados post-limpieza a /agent-scan-results.
+        if (currentScan?.scan_id) {
+          await fetchScanDetails(currentScan.scan_id);
+          setTimeout(async () => {
+            await fetchScanDetails(currentScan.scan_id);
+            await fetchScans();
+          }, 1500);
+        } else {
+          await fetchScans();
+        }
       }
     } catch (error) {
       const detail = error.response?.data?.detail || error.message;
