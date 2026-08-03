@@ -323,6 +323,7 @@ def execute_agent_task(task, host_id, org_id):
     
     files_deleted = 0
     size_freed = 0
+    backup_size = 0  # Tamaño ocupado por el backup (en el mismo disco)
     errors = []
     backup_path = None
     
@@ -374,8 +375,10 @@ def execute_agent_task(task, host_id, org_id):
                         dest = os.path.join(c_backup, os.path.basename(fp))
                         if os.path.isfile(fp):
                             shutil.copy2(fp, dest)
+                            backup_size += fsize
                         elif os.path.isdir(fp):
                             shutil.copytree(fp, dest, dirs_exist_ok=True)
+                            backup_size += fsize
                             
                     if os.path.isfile(fp):
                         os.remove(fp)
@@ -412,6 +415,7 @@ def execute_agent_task(task, host_id, org_id):
                                     dest = os.path.join(c_backup, os.path.basename(sfp))
                                     if not os.path.exists(dest):
                                         shutil.copy2(sfp, dest)
+                                        backup_size += sfsize
                                 os.remove(sfp)
                                 files_deleted += 1
                                 size_freed += sfsize
@@ -457,8 +461,8 @@ def execute_agent_task(task, host_id, org_id):
             logger.info(f"✅ Escaneo real completado: {total_files} archivos en {len(cat_res)} categorías, {tot_size} bytes")
             
             # Marcar la tarea como completada con los datos del scan
-            files_deleted = total_files  # Para el resultado del task
-            size_freed = tot_size
+            # NOTA: run_disk_scan es solo un escaneo, NO elimina archivos.
+            # No sobreescribir files_deleted/size_freed (quedan en 0).
         except Exception as scan_err:
             err_msg = f"Error en escaneo real del disco: {scan_err}"
             errors.append(err_msg)
@@ -522,9 +526,13 @@ def execute_agent_task(task, host_id, org_id):
         logger.info(f"📤 Reportando resultado de tarea #{task_id} a servidor backend...")
         http_post(f"{BACKEND_URL}/api/v1/disk-analyzer/task-result", result_payload)
         print("-" * 65)
+        net_freed = size_freed - backup_size
         logger.info(f"✅ TAREA #{task_id} FINALIZADA Y CONFIRMADA AL DASHBOARD:")
         logger.info(f"   ├─ Total archivos eliminados: {files_deleted}")
-        logger.info(f"   ├─ Espacio liberado: {size_freed} bytes")
+        logger.info(f"   ├─ Espacio bruto liberado: {size_freed} bytes")
+        if backup_size > 0:
+            logger.info(f"   ├─ ⚠️ Backup ocupa en disco: {backup_size} bytes (neto liberado: {net_freed} bytes)")
+            logger.info(f"   ├─ 💡 Para liberar el backup: usa 'Purgar Respaldo' desde el dashboard")
         logger.info(f"   └─ Estado nuevo del disco ({drive_name}): {pct_disk}% usado ({fre_disk // (1024**3)} GB libres)")
         print("=" * 65 + "\n")
     except Exception as post_err:

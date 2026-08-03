@@ -869,6 +869,8 @@ const DiskAnalyzer = () => {
         await fetchDrives();
         await fetchCleanupHistory();
         setSelectedCategories([]);
+        // Auto-expandir el historial para que el usuario vea el botón "Purgar Respaldo"
+        setShowCleanupHistory(true);
         // Refrescar el scan actual para mostrar categorías actualizadas.
         // Esperamos 1.5s porque el agente puede tardar un instante en publicar
         // los resultados post-limpieza a /agent-scan-results.
@@ -1916,7 +1918,10 @@ const DiskAnalyzer = () => {
 
             <div className="modal-body">
               <div className="modal-success-banner">
-                🛡️ <strong>Garantía de Cero Riesgo:</strong> Todos los archivos se moverán primero a una copia de respaldo encriptada. Podrás restaurarlos con 1 solo clic en cualquier momento.
+                🛡️ <strong>Garantía de Cero Riesgo:</strong> Los archivos se copian a un respaldo en <code>~/.ai-infra-monitor/cleanup_backup/</code> antes de borrarse. Puedes restaurarlos o <strong>purgar el respaldo</strong> (para liberar el espacio real) desde el historial.
+              </div>
+              <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '8px', padding: '0.75rem 1rem', fontSize: '0.85rem', color: '#fcd34d' }}>
+                ⚠️ <strong>Nota sobre espacio en disco:</strong> El respaldo se guarda en el <em>mismo disco</em>. El espacio neto liberado será visible hasta que purges el respaldo desde el historial.
               </div>
 
               <div className="modal-stats-pills">
@@ -2157,10 +2162,44 @@ const DiskAnalyzer = () => {
                 </div>
               )}
 
-              {/* Backup path notice */}
+              {/* Backup path notice + Purge CTA */}
               {cleanupTaskState.backupPath && (
-                <div style={{ fontSize: '0.825rem', color: '#94a3b8', background: 'rgba(255, 255, 255, 0.03)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
-                  🛡️ <strong>Copia de Resguardo Local:</strong> <code>{cleanupTaskState.backupPath}</code>
+                <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '1rem', borderRadius: '10px' }}>
+                  <div style={{ fontSize: '0.825rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
+                    🛡️ <strong style={{ color: '#fcd34d' }}>Respaldo guardado en tu equipo:</strong><br/>
+                    <code style={{ fontSize: '0.78rem', wordBreak: 'break-all', color: '#e2e8f0' }}>{cleanupTaskState.backupPath}</code>
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: '#fcd34d', marginBottom: '0.75rem', lineHeight: 1.4 }}>
+                    ⚠️ El respaldo ocupa el <strong>mismo espacio</strong> que los archivos eliminados. Para liberar el espacio real en disco, purgalo:
+                  </div>
+                  {['completed', 'completed_with_warnings'].includes(cleanupTaskState.status) && (
+                    <button
+                      onClick={async () => {
+                        setCleanupTaskState(prev => ({ ...prev, isOpen: false }));
+                        // Buscar el cleanup item con este backup_path en el historial
+                        await fetchCleanupHistory();
+                        const matchItem = cleanupHistory.find(c => c.backup_path === cleanupTaskState.backupPath)
+                          || { backup_path: cleanupTaskState.backupPath, size_freed: cleanupTaskState.sizeFreed };
+                        handleOpenPurgeModal(matchItem);
+                      }}
+                      style={{
+                        background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                        color: '#0f172a',
+                        border: 'none',
+                        padding: '0.6rem 1.25rem',
+                        borderRadius: '8px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        fontSize: '0.9rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        boxShadow: '0 4px 12px rgba(245, 158, 11, 0.35)'
+                      }}
+                    >
+                      🗑️ Purgar Respaldo Ahora (Liberar Espacio Real)
+                    </button>
+                  )}
                 </div>
               )}
 
