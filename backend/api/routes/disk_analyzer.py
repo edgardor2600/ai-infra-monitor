@@ -712,10 +712,29 @@ async def analyze_scan_ai(request: AIAnalysisRequest):
             conn.close()
 
 
+def is_safe_backup_path(backup_path: str) -> bool:
+    """Validate backup path to prevent path traversal and arbitrary filesystem manipulation."""
+    if not backup_path or not isinstance(backup_path, str):
+        return False
+    try:
+        real_path = os.path.realpath(backup_path)
+        if 'cleanup_backup' in real_path or '.ai-infra-monitor' in real_path:
+            return True
+        return False
+    except Exception:
+        return False
+
+
 @router.post("/purge-backup", response_model=dict)
 async def purge_backup(request: PurgeBackupRequest, authorization: Optional[str] = Header(None)):
     """Purge a backup folder to immediately free disk space."""
     org_id = get_current_org_id(authorization)
+    
+    if not is_safe_backup_path(request.backup_path):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ruta de respaldo no válida o no autorizada por políticas de seguridad."
+        )
     
     if os.path.exists(request.backup_path):
         res = DiskCleaner.purge_backup_path(request.backup_path)
@@ -769,7 +788,7 @@ async def purge_backup(request: PurgeBackupRequest, authorization: Optional[str]
 async def inspect_backup(request: PurgeBackupRequest):
     """Inspect backup directory contents and generate MiniMax AI analysis before purge."""
     backup_path = request.backup_path
-    if not backup_path or not os.path.exists(backup_path):
+    if not backup_path or not is_safe_backup_path(backup_path) or not os.path.exists(backup_path):
         return {
             "ok": True,
             "backup_info": {

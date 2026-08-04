@@ -99,52 +99,37 @@ async def serve_agent_script():
     return Response(content="# Agent source not found", status_code=404)
 
 
+from backend.db.connection import get_db_connection
+
+
 async def check_db_connection() -> bool:
-    """
-    Mock database connection check.
-    In a real implementation, this would verify PostgreSQL connectivity.
-    
-    Returns:
-        bool: Always returns True for mock implementation
-    """
-    logger.info("Checking database connection (mock)")
-    return True
-
-
-async def check_redis_connection() -> bool:
-    """
-    Mock Redis connection check.
-    In a real implementation, this would verify Redis connectivity.
-    
-    Returns:
-        bool: Always returns True for mock implementation
-    """
-    logger.info("Checking Redis connection (mock)")
-    return True
+    """Verify active PostgreSQL database connectivity."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return False
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1;")
+        cursor.fetchone()
+        cursor.close()
+        return True
+    except Exception as e:
+        logger.error(f"Health check DB connection error: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
 
 
 @app.get("/health")
 async def health_check():
-    """
-    Health check endpoint that verifies service status.
-    
-    Performs mock checks for:
-    - Database connectivity
-    - Redis connectivity
-    
-    Returns:
-        JSONResponse: Status object with "ok" status
-    """
-    logger.info("Health check requested")
-    
-    # Perform mock checks
+    """Health check endpoint that verifies database and service status."""
     db_ok = await check_db_connection()
-    redis_ok = await check_redis_connection()
-    
-    # Log check results
-    logger.info(f"DB check: {db_ok}, Redis check: {redis_ok}")
-    
-    return JSONResponse(
-        status_code=200,
-        content={"status": "ok"}
-    )
+    if db_ok:
+        return JSONResponse(status_code=200, content={"status": "ok"})
+    else:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy", "database": False}
+        )

@@ -258,6 +258,15 @@ class DiskCleaner:
                 'freed_bytes': 0,
                 'freed_formatted': '0 B'
             }
+
+        real_path = os.path.realpath(backup_path)
+        if 'cleanup_backup' not in real_path and '.ai-infra-monitor' not in real_path:
+            return {
+                'success': False,
+                'message': 'Ruta de respaldo no permitida por razones de seguridad.',
+                'freed_bytes': 0,
+                'freed_formatted': '0 B'
+            }
         
         def _remove_readonly(func, path, excinfo):
             import stat

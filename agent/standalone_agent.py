@@ -368,25 +368,33 @@ def execute_agent_task(task, host_id, org_id):
                 fsize = finfo.get('size', 0)
                 if not fp or not os.path.exists(fp):
                     continue
-                try:
-                    if create_backup and backup_path:
+                # --- Backup (independiente del delete) ---
+                if create_backup and backup_path:
+                    try:
                         c_backup = os.path.join(backup_path, cat)
+                        # Usar un sufijo basado en el directorio padre para evitar colisiones
+                        # de nombre (ej: múltiples __init__.pyi de distintos directorios)
+                        parent_hash = str(abs(hash(os.path.dirname(fp))))[:8]
+                        dest = os.path.join(c_backup, f"{parent_hash}_{os.path.basename(fp)}")
                         os.makedirs(c_backup, exist_ok=True)
-                        dest = os.path.join(c_backup, os.path.basename(fp))
                         if os.path.isfile(fp):
-                            shutil.copy2(fp, dest)
-                            backup_size += fsize
+                            if not os.path.exists(dest):
+                                shutil.copy2(fp, dest)
+                                backup_size += fsize
                         elif os.path.isdir(fp):
-                            shutil.copytree(fp, dest, dirs_exist_ok=True)
-                            backup_size += fsize
-                            
+                            if not os.path.exists(dest):
+                                shutil.copytree(fp, dest, dirs_exist_ok=True)
+                                backup_size += fsize
+                    except Exception as bk_err:
+                        logger.warning(f"   ⚠️ Backup no pudo copiarse ({os.path.basename(fp)}): {bk_err}")
+                # --- Delete (independiente del backup) ---
+                try:
                     if os.path.isfile(fp):
                         os.remove(fp)
                         deleted_paths.add(fp)
                     elif os.path.isdir(fp):
                         shutil.rmtree(fp, ignore_errors=True)
                         deleted_paths.add(fp)
-                        
                     files_deleted += 1
                     size_freed += fsize
                     logger.info(f"   🗑️ Borrado de disco: {fp} ({fsize} bytes)")

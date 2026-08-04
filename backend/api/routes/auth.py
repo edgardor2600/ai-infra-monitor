@@ -21,7 +21,10 @@ load_dotenv()
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
 
-JWT_SECRET = os.getenv("JWT_SECRET", "super_secret_b2b_saas_key_2026_x99")
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    logger.warning("⚠️ JWT_SECRET no está configurado en el entorno. Se usará clave por defecto solo para desarrollo local.")
+    JWT_SECRET = "development_fallback_key_ai_infra_monitor_2026"
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_SECONDS = 7 * 24 * 3600 # 7 days
 
